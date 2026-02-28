@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Track, CreateTrackInput } from '../types';
+import { parseEndTime } from '../utils/endTimeParse';
 
 interface TrackFormProps {
   initial?: Track;
@@ -12,7 +13,8 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
   const [title, setTitle] = useState(initial?.title ?? '');
   const [artist, setArtist] = useState(initial?.artist ?? '');
   const [startTimeSec, setStartTimeSec] = useState(initial?.startTimeSec?.toString() ?? '');
-  const [endTimeSec, setEndTimeSec] = useState(initial?.endTimeSec?.toString() ?? '');
+  const [endTimeText, setEndTimeText] = useState(initial?.endTimeSec?.toString() ?? '');
+  const [endTimeError, setEndTimeError] = useState('');
   const [volume, setVolume] = useState(initial?.volume?.toString() ?? '100');
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [submitting, setSubmitting] = useState(false);
@@ -20,6 +22,21 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
 
   const isEditing = !!initial;
   const hasUrl = youtubeUrl.trim().length > 0;
+
+  /** Validate end-time text on every change; clear error once input becomes valid or empty. */
+  const handleEndTimeChange = (raw: string) => {
+    setEndTimeText(raw);
+    if (!raw.trim()) {
+      setEndTimeError('');
+      return;
+    }
+    const result = parseEndTime(raw);
+    if (result && !result.ok) {
+      setEndTimeError(result.error);
+    } else {
+      setEndTimeError('');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,13 +52,21 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
       return;
     }
 
+    // Validate and parse end-time field
+    const endTimeParsed = parseEndTime(endTimeText);
+    if (endTimeParsed && !endTimeParsed.ok) {
+      setEndTimeError(endTimeParsed.error);
+      setError('Please fix the end time field before submitting.');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
     try {
       const data: CreateTrackInput = {
         youtubeUrl: youtubeUrl.trim(),
         startTimeSec: startTimeSec ? parseInt(startTimeSec, 10) : null,
-        endTimeSec: endTimeSec ? parseInt(endTimeSec, 10) : null,
+        endTimeSec: endTimeParsed ? endTimeParsed.value : null,
         volume: volume ? Math.min(200, Math.max(0, parseInt(volume, 10))) : 100,
         notes: notes.trim(),
       };
@@ -94,8 +119,23 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
           <input type="number" min="0" value={startTimeSec} onChange={e => setStartTimeSec(e.target.value)} placeholder="0" />
         </div>
         <div className="form-group">
-          <label>End Time (sec)</label>
-          <input type="number" min="0" value={endTimeSec} onChange={e => setEndTimeSec(e.target.value)} placeholder="∞" />
+          <label>End Time</label>
+          <input
+            type="text"
+            value={endTimeText}
+            onChange={e => handleEndTimeChange(e.target.value)}
+            placeholder="e.g. 95, 1:35, or 1:35:250"
+            style={endTimeError ? { borderColor: 'var(--danger)' } : undefined}
+          />
+          {endTimeError ? (
+            <p style={{ color: 'var(--danger)', fontSize: '0.78rem', marginTop: 4 }}>
+              {endTimeError}
+            </p>
+          ) : (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>
+              Accepts: <code>95</code> (secs), <code>1:35</code> (MM:SS), or <code>1:35:250</code> (MM:SS:mmm). Leave blank for no limit.
+            </p>
+          )}
         </div>
       </div>
 
