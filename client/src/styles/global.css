@@ -1328,6 +1328,305 @@ a:hover {
   cursor: pointer;
 }
 
+/* ── Shuffle / Loop / Active control state ─── */
+
+.player-shuffle-btn,
+.player-loop-btn {
+  font-size: 0.85rem;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.player-control-active {
+  opacity: 1 !important;
+  color: var(--accent) !important;
+  position: relative;
+}
+
+.player-control-active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.player-bar-menu {
+  flex-shrink: 0;
+}
+
+/* ── Track Menu (triple-dot) ─── */
+
+.track-menu-container {
+  position: relative;
+}
+
+.track-menu-trigger {
+  font-size: 1.1rem !important;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+  letter-spacing: 2px;
+}
+
+.track-menu-trigger:hover {
+  opacity: 1;
+}
+
+.track-menu-dropdown {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 6px;
+  min-width: 200px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 100;
+  padding: 4px 0;
+  animation: trackMenuFadeIn 0.12s ease-out;
+}
+
+@keyframes trackMenuFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.track-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+
+.track-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.track-menu-item-icon {
+  font-size: 0.9rem;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* ── Now Playing: track menu in header ─── */
+
+.now-playing-meta-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.now-playing-meta-header .now-playing-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.now-playing-track-menu .track-menu-trigger {
+  font-size: 1.3rem !important;
+  opacity: 0.7;
+}
+
+.now-playing-track-menu .track-menu-dropdown {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 6px;
+}
+
+/* Now Playing shuffle/loop buttons */
+.now-playing-shuffle-btn,
+.now-playing-loop-btn {
+  opacity: 0.5;
+}
+
+/* ── Add to Playlist Modal ─── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: modalOverlayFadeIn 0.15s ease-out;
+}
+
+@keyframes modalOverlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.add-to-playlist-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: trackMenuFadeIn 0.2s ease-out;
+}
+
+.add-to-playlist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 8px;
+}
+
+.add-to-playlist-header h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.add-to-playlist-close {
+  opacity: 0.6;
+  font-size: 1rem !important;
+}
+
+.add-to-playlist-close:hover {
+  opacity: 1;
+}
+
+.add-to-playlist-track {
+  padding: 0 20px 12px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.add-to-playlist-feedback {
+  margin: 0 20px 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.feedback-success {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.feedback-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.add-to-playlist-loading {
+  padding: 24px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.add-to-playlist-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px;
+  max-height: 300px;
+}
+
+.add-to-playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.add-to-playlist-item:hover {
+  background: var(--bg-hover);
+}
+
+.add-to-playlist-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.add-to-playlist-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-to-playlist-item-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.add-to-playlist-item-spinner {
+  flex-shrink: 0;
+}
+
+.add-to-playlist-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.add-to-playlist-footer {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.add-to-playlist-new-btn {
+  width: 100%;
+}
+
+.add-to-playlist-create-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.add-to-playlist-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.add-to-playlist-input:focus {
+  border-color: var(--border-focus);
+}
+
 /* Adjust main content when player is visible */
 .main-content {
   padding-bottom: 90px;
@@ -4607,4 +4906,82 @@ a:hover {
   .session-actions-panel {
     grid-template-columns: 1fr;
   }
+}
+
+/* ========================================================================
+   Impersonation Bar
+   ======================================================================== */
+
+/* Impersonation banner — orange alert bar at top of page */
+.impersonation-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #e67e22, #f39c12);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.impersonation-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.impersonation-banner-text strong {
+  font-weight: 700;
+}
+
+.impersonation-banner-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 5px 16px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.impersonation-banner-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Push app content down when impersonation banner is visible */
+.impersonation-banner + .app-layout {
+  padding-top: 44px;
+}
+
+/* Impersonate button in user list */
+.btn-impersonate {
+  background: transparent;
+  color: #e67e22;
+  border: 1px solid #e67e22;
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-impersonate:hover:not(:disabled) {
+  background: #e67e22;
+  color: #fff;
+}
+
+.btn-impersonate:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }

@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer } from '../components/AudioPlayer';
+import type { LoopMode } from '../components/AudioPlayer';
 import { getVideoUrl, downloadVideo as apiDownloadVideo, getTrack } from '../api';
+import TrackMenu from '../components/TrackMenu';
 
 export type MediaMode = 'video' | 'artwork' | 'lyrics';
 
@@ -40,6 +42,8 @@ export default function NowPlayingPage() {
     currentTime,
     duration,
     volume,
+    shuffle,
+    loopMode,
     pause,
     resume,
     stop,
@@ -48,6 +52,8 @@ export default function NowPlayingPage() {
     playNext,
     playPrev,
     updateCurrentTrack,
+    toggleShuffle,
+    cycleLoopMode,
   } = useAudioPlayer();
 
   const [mediaMode, setMediaModeState] = useState<MediaMode>(loadMediaMode);
@@ -266,10 +272,18 @@ export default function NowPlayingPage() {
 
         <div className="now-playing-info-wrap">
           <div className="now-playing-meta">
-            <h1 className="now-playing-title">
-              {track.isLiveStream && <span className="badge-live badge-live-lg" title="Live Stream">LIVE</span>}
-              {track.title}
-            </h1>
+            <div className="now-playing-meta-header">
+              <h1 className="now-playing-title">
+                {track.isLiveStream && <span className="badge-live badge-live-lg" title="Live Stream">LIVE</span>}
+                {track.title}
+              </h1>
+              <TrackMenu
+                trackId={track.id}
+                trackTitle={track.title}
+                youtubeUrl={track.youtubeUrl}
+                className="now-playing-track-menu"
+              />
+            </div>
             <p className="now-playing-artist">{track.artist}</p>
             {track.album && <p className="now-playing-album"><span className="now-playing-label">Album</span>{track.album}</p>}
             {track.releaseYear && <p className="now-playing-year">{track.releaseYear}</p>}
@@ -308,11 +322,28 @@ export default function NowPlayingPage() {
           )}
 
           <div className="now-playing-controls">
+            <button
+              className={`btn-icon now-playing-btn now-playing-shuffle-btn ${shuffle ? 'player-control-active' : ''}`}
+              onClick={toggleShuffle}
+              title={shuffle ? 'Shuffle: On' : 'Shuffle: Off'}
+              aria-label={shuffle ? 'Disable shuffle' : 'Enable shuffle'}
+              aria-pressed={shuffle}
+            >
+              🔀
+            </button>
             <button className="btn-icon now-playing-btn" onClick={playPrev} title="Previous">⏮</button>
             {isPlaying
               ? <button className="btn-icon now-playing-btn now-playing-play-btn" onClick={pause} title="Pause">⏸</button>
               : <button className="btn-icon now-playing-btn now-playing-play-btn" onClick={resume} title="Play">▶️</button>}
             <button className="btn-icon now-playing-btn" onClick={playNext} title="Next">⏭</button>
+            <button
+              className={`btn-icon now-playing-btn now-playing-loop-btn ${loopMode !== 'off' ? 'player-control-active' : ''}`}
+              onClick={cycleLoopMode}
+              title={loopMode === 'off' ? 'Loop: Off' : loopMode === 'all' ? 'Loop: All' : 'Loop: One'}
+              aria-label={`Loop mode: ${loopMode}`}
+            >
+              {loopMode === 'one' ? '🔂' : '🔁'}
+            </button>
             <button className="btn-icon now-playing-btn now-playing-stop-btn" onClick={stop} title="Stop">⏹</button>
           </div>
 
