@@ -41,7 +41,7 @@ function makeMockStation(overrides: Partial<RadioStationShape> = {}): RadioStati
     id: '00000000-0000-0000-0000-000000000010',
     name: 'Rainwave OCR Remix',
     slug: 'rainwave-ocr-remix',
-    streamUrl: 'https://relay.rainwave.cc/ocremix.ogg',
+    streamUrl: 'https://rainwave.cc/tune_in/2.mp3.m3u',
     homepageUrl: 'https://rainwave.cc/ocremix/',
     description: '24/7 live radio of video game music remixes.',
     imageUrl: null,
@@ -100,7 +100,7 @@ describe('radio stations — station shape', () => {
   it('default station has expected fields', () => {
     const s = makeMockStation();
     assert.equal(s.name, 'Rainwave OCR Remix');
-    assert.equal(s.streamUrl, 'https://relay.rainwave.cc/ocremix.ogg');
+    assert.equal(s.streamUrl, 'https://rainwave.cc/tune_in/2.mp3.m3u');
     assert.equal(s.homepageUrl, 'https://rainwave.cc/ocremix/');
     assert.equal(s.isLive, true);
     assert.equal(s.active, true);
@@ -125,15 +125,16 @@ describe('radio stations — seed station', () => {
     const seed = {
       name: 'Rainwave OCR Remix',
       slug: 'rainwave-ocr-remix',
-      streamUrl: 'https://relay.rainwave.cc/ocremix.ogg',
+      streamUrl: 'https://rainwave.cc/tune_in/2.mp3.m3u',
       homepageUrl: 'https://rainwave.cc/ocremix/',
       isLive: true,
       active: true,
       tags: ['vgm', 'remix', 'ocremix', 'rainwave'],
     };
     assert.equal(seed.name, 'Rainwave OCR Remix');
-    // Direct OGG stream — no M3U resolution needed, no credentials required
-    assert.ok(seed.streamUrl.startsWith('https://relay.rainwave.cc/'));
+    // M3U playlist endpoint — resolve-stream will extract the actual HTTPS stream URL
+    assert.equal(seed.streamUrl, 'https://rainwave.cc/tune_in/2.mp3.m3u');
+    assert.ok(seed.streamUrl.endsWith('.m3u'), 'streamUrl should be an M3U playlist');
     assert.equal(seed.isLive, true);
   });
 });
