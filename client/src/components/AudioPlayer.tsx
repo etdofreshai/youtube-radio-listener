@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import type { Track, RadioStation } from '../types';
-import { getPlaybackUrl } from '../api';
+import { getPlaybackUrl, resolveRadioStream } from '../api';
+
+export type LoopMode = 'off' | 'all' | 'one';
 
 interface AudioPlayerState {
   currentTrack: Track | null;
@@ -10,6 +12,10 @@ interface AudioPlayerState {
   currentTime: number;
   duration: number;
   volume: number;
+  radioLoading: boolean;
+  radioError: string | null;
+  shuffle: boolean;
+  loopMode: LoopMode;
 }
 
 interface AudioPlayerActions {
@@ -24,6 +30,8 @@ interface AudioPlayerActions {
   playPrev: () => void;
   /** Patch fields on currentTrack in-place (e.g. after video download completes). */
   updateCurrentTrack: (updates: Partial<Track>) => void;
+  toggleShuffle: () => void;
+  cycleLoopMode: () => void;
 }
 
 interface AudioPlayerContextType extends AudioPlayerState, AudioPlayerActions {
@@ -45,11 +53,15 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [currentRadio, setCurrentRadio] = useState<RadioStation | null>(null);
+  const [radioLoading, setRadioLoading] = useState(false);
+  const [radioError, setRadioError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(100);
   const [playlist, setPlaylist] = useState<Track[]>([]);
+  const [shuffle, setShuffle] = useState(false);
+  const [loopMode, setLoopMode] = useState<LoopMode>('off');
 
   // Ref to hold auto-advance callback (updated when playlist/currentTrack change)
   const onEndedRef = useRef<() => void>(() => {});
@@ -113,7 +125,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     audio.play().catch(err => console.error('Play failed:', err));
   }, [volume]);
 
-  const playRadio = useCallback((station: RadioStation) => {
+  const playRadio = useCallback(async (station: RadioStation) => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -122,15 +134,61 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       audioCtxRef.current.resume();
     }
 
-    audio.src = station.streamUrl;
-    // Reset to current volume for radio
-    if (gainRef.current) {
-      gainRef.current.gain.value = volume / 100;
-    }
+    // Set radio state immediately for UI feedback
     setCurrentRadio(station);
     setCurrentTrack(null);
+    setRadioLoading(true);
+    setRadioError(null);
 
-    audio.play().catch(err => console.error('Radio play failed:', err));
+    try {
+      // Resolve M3U/playlist URLs to actual stream URLs via server
+      const resolved = await resolveRadioStream(station.id);
+      if (resolved.error) {
+        console.warn('Stream resolve warning:', resolved.error);
+      }
+
+      const streamUrl = resolved.streamUrl;
+
+      // Set up error handler before setting src
+      const errorHandler = () => {
+        const mediaError = audio.error;
+        let msg = 'Failed to load radio stream';
+        if (mediaError) {
+          switch (mediaError.code) {
+            case MediaError.MEDIA_ERR_ABORTED: msg = 'Stream playback was aborted'; break;
+            case MediaError.MEDIA_ERR_NETWORK: msg = 'Network error — check your connection'; break;
+            case MediaError.MEDIA_ERR_DECODE: msg = 'Stream format not supported'; break;
+            case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED: msg = 'Stream URL not supported or unavailable'; break;
+          }
+        }
+        setRadioError(msg);
+        setRadioLoading(false);
+        setIsPlaying(false);
+      };
+
+      const playingHandler = () => {
+        setRadioLoading(false);
+        setRadioError(null);
+        // Clean up one-shot listeners
+        audio.removeEventListener('error', errorHandler);
+        audio.removeEventListener('playing', playingHandler);
+      };
+
+      audio.addEventListener('error', errorHandler, { once: true });
+      audio.addEventListener('playing', playingHandler, { once: true });
+
+      audio.src = streamUrl;
+      // Reset to current volume for radio
+      if (gainRef.current) {
+        gainRef.current.gain.value = volume / 100;
+      }
+
+      await audio.play();
+    } catch (err: any) {
+      console.error('Radio play failed:', err);
+      setRadioError(err?.message || 'Failed to play radio stream');
+      setRadioLoading(false);
+    }
   }, [volume]);
 
   const pause = useCallback(() => {
@@ -152,6 +210,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    setRadioLoading(false);
+    setRadioError(null);
   }, []);
 
   const seek = useCallback((time: number) => {
@@ -181,40 +241,83 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (!currentTrack || playlist.length === 0) return;
     const readyTracks = playlist.filter(t => t.audioStatus === 'ready');
     const idx = readyTracks.findIndex(t => t.id === currentTrack.id);
-    if (idx < readyTracks.length - 1) play(readyTracks[idx + 1]);
-  }, [currentTrack, playlist, play]);
+    if (shuffle) {
+      // Pick a random track that isn't the current one
+      const others = readyTracks.filter(t => t.id !== currentTrack.id);
+      if (others.length > 0) play(others[Math.floor(Math.random() * others.length)]);
+    } else if (idx < readyTracks.length - 1) {
+      play(readyTracks[idx + 1]);
+    } else if (loopMode === 'all' && readyTracks.length > 0) {
+      play(readyTracks[0]);
+    }
+  }, [currentTrack, playlist, play, shuffle, loopMode]);
 
   const playPrev = useCallback(() => {
     if (!currentTrack || playlist.length === 0) return;
     const readyTracks = playlist.filter(t => t.audioStatus === 'ready');
     const idx = readyTracks.findIndex(t => t.id === currentTrack.id);
     if (idx > 0) play(readyTracks[idx - 1]);
-  }, [currentTrack, playlist, play]);
+    else if (loopMode === 'all' && readyTracks.length > 0) {
+      play(readyTracks[readyTracks.length - 1]);
+    }
+  }, [currentTrack, playlist, play, loopMode]);
 
   /** Patch fields on currentTrack without restarting playback. */
   const updateCurrentTrack = useCallback((updates: Partial<Track>) => {
     setCurrentTrack(prev => prev ? { ...prev, ...updates } : null);
   }, []);
 
-  // Auto-advance: when track ends, play next
+  const toggleShuffle = useCallback(() => {
+    setShuffle(prev => !prev);
+  }, []);
+
+  const cycleLoopMode = useCallback(() => {
+    setLoopMode(prev => {
+      if (prev === 'off') return 'all';
+      if (prev === 'all') return 'one';
+      return 'off';
+    });
+  }, []);
+
+  // Auto-advance: when track ends, play next (respects loop + shuffle)
   useEffect(() => {
     onEndedRef.current = () => {
-      // Check if endTimeSec triggered the stop (handled elsewhere) — don't double-advance
       const readyTracks = playlist.filter(t => t.audioStatus === 'ready');
       const idx = currentTrack ? readyTracks.findIndex(t => t.id === currentTrack.id) : -1;
+
+      // Loop one: replay current track
+      if (loopMode === 'one' && currentTrack) {
+        play(currentTrack);
+        return;
+      }
+
+      // Shuffle: pick random
+      if (shuffle && readyTracks.length > 1) {
+        const others = readyTracks.filter(t => t.id !== currentTrack?.id);
+        if (others.length > 0) {
+          play(others[Math.floor(Math.random() * others.length)]);
+          return;
+        }
+      }
+
       if (idx >= 0 && idx < readyTracks.length - 1) {
         play(readyTracks[idx + 1]);
+      } else if (loopMode === 'all' && readyTracks.length > 0) {
+        // Wrap around to first track
+        play(readyTracks[0]);
       } else {
         setIsPlaying(false);
       }
     };
-  }, [currentTrack, playlist, play]);
+  }, [currentTrack, playlist, play, shuffle, loopMode]);
 
   return (
     <AudioPlayerContext.Provider value={{
       currentTrack, currentRadio, isPlaying, currentTime, duration, volume,
+      radioLoading, radioError,
+      shuffle, loopMode,
       play, playRadio, pause, resume, stop, seek, setVolume, setPlaylist, playNext, playPrev,
-      updateCurrentTrack,
+      updateCurrentTrack, toggleShuffle, cycleLoopMode,
     }}>
       {children}
     </AudioPlayerContext.Provider>
@@ -223,6 +326,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
 // ---------- Bottom player bar ----------
 
+import TrackMenu from './TrackMenu';
+
 function formatTime(sec: number): string {
   if (!sec || !isFinite(sec)) return '0:00';
   const m = Math.floor(sec / 60);
@@ -230,10 +335,41 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function ShuffleButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      className={`btn-icon player-shuffle-btn ${active ? 'player-control-active' : ''}`}
+      onClick={onClick}
+      title={active ? 'Shuffle: On' : 'Shuffle: Off'}
+      aria-label={active ? 'Disable shuffle' : 'Enable shuffle'}
+      aria-pressed={active}
+    >
+      🔀
+    </button>
+  );
+}
+
+function LoopButton({ mode, onClick }: { mode: LoopMode; onClick: () => void }) {
+  const label = mode === 'off' ? 'Loop: Off' : mode === 'all' ? 'Loop: All' : 'Loop: One';
+  return (
+    <button
+      className={`btn-icon player-loop-btn ${mode !== 'off' ? 'player-control-active' : ''}`}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+    >
+      {mode === 'one' ? '🔂' : '🔁'}
+    </button>
+  );
+}
+
 export function PlayerBar() {
   const {
     currentTrack, currentRadio, isPlaying, currentTime, duration, volume,
+    radioLoading, radioError,
+    shuffle, loopMode,
     pause, resume, stop, seek, setVolume, playNext, playPrev,
+    toggleShuffle, cycleLoopMode,
   } = useAudioPlayer();
 
   if (!currentTrack && !currentRadio) return null;
@@ -248,12 +384,16 @@ export function PlayerBar() {
               <span className="badge-live" title="Live Radio">LIVE</span>
               {currentRadio.name}
             </div>
-            <div className="player-artist">📻 Radio Station</div>
+            <div className="player-artist">
+              {radioLoading ? '⏳ Connecting…' : radioError ? `❌ ${radioError}` : '📻 Streaming'}
+            </div>
           </Link>
         </div>
 
         <div className="player-controls">
-          {isPlaying ? (
+          {radioLoading ? (
+            <button className="btn-icon player-play-btn" disabled title="Connecting…">⏳</button>
+          ) : isPlaying ? (
             <button className="btn-icon player-play-btn" onClick={pause} title="Pause">⏸</button>
           ) : (
             <button className="btn-icon player-play-btn" onClick={resume} title="Play">▶️</button>
@@ -262,7 +402,13 @@ export function PlayerBar() {
         </div>
 
         <div className="player-progress player-progress-live">
-          <span className="badge-live-pulse" title="Streaming live">● LIVE</span>
+          {radioError ? (
+            <span style={{ color: 'var(--error, #f87171)', fontSize: '0.8rem' }}>Stream error — try again</span>
+          ) : radioLoading ? (
+            <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Connecting to stream…</span>
+          ) : (
+            <span className="badge-live-pulse" title="Streaming live">● LIVE</span>
+          )}
           {currentRadio.homepageUrl && (
             <a
               href={currentRadio.homepageUrl}
@@ -307,6 +453,7 @@ export function PlayerBar() {
       </div>
 
       <div className="player-controls">
+        <ShuffleButton active={shuffle} onClick={toggleShuffle} />
         <button className="btn-icon" onClick={playPrev} title="Previous">⏮</button>
         {isPlaying ? (
           <button className="btn-icon player-play-btn" onClick={pause} title="Pause">⏸</button>
@@ -314,6 +461,7 @@ export function PlayerBar() {
           <button className="btn-icon player-play-btn" onClick={resume} title="Play">▶️</button>
         )}
         <button className="btn-icon" onClick={playNext} title="Next">⏭</button>
+        <LoopButton mode={loopMode} onClick={cycleLoopMode} />
         <button className="btn-icon" onClick={stop} title="Stop">⏹</button>
       </div>
 
@@ -349,6 +497,13 @@ export function PlayerBar() {
         />
         <span style={{ fontSize: '0.7rem', minWidth: 36, textAlign: 'right' }}>{volume}%</span>
       </div>
+
+      <TrackMenu
+        trackId={currentTrack!.id}
+        trackTitle={currentTrack!.title}
+        youtubeUrl={currentTrack!.youtubeUrl}
+        className="player-bar-menu"
+      />
     </div>
   );
 }

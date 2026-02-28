@@ -126,6 +126,13 @@ CREATE TABLE IF NOT EXISTS playlists (
 
 ALTER TABLE playlists ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
 
+-- ============================================================
+-- v11: Playlist ownership / sharing flags
+-- ============================================================
+ALTER TABLE playlists ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id);
+ALTER TABLE playlists ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE playlists ADD COLUMN IF NOT EXISTS is_editable_by_others BOOLEAN NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS playlist_tracks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   playlist_id UUID NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,

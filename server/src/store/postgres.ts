@@ -847,9 +847,65 @@ function rowToPlaylist(row: any, trackIds: string[]): Playlist {
     slug: row.slug || null,
     description: row.description || '',
     trackIds,
+    // Ownership / sharing (v11)
+    ownerId: row.created_by || null,
+    ownerUsername: row.owner_username || null,
+    updatedBy: row.updated_by || null,
+    updatedByUsername: row.updated_by_username || null,
+    isPublic: row.is_public ?? false,
+    isEditableByOthers: row.is_editable_by_others ?? false,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
   };
+}
+
+// ============================================================
+// Playlist Permission Helpers (v11)
+// ============================================================
+
+/** A playlist with no owner is a legacy playlist — everyone can edit/delete */
+export async function canEditPlaylist(playlistId: string, actorId: string): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    'SELECT created_by, is_editable_by_others FROM playlists WHERE id = $1',
+    [playlistId]
+  );
+  if (rows.length === 0) return false;
+  const { created_by, is_editable_by_others } = rows[0];
+  // Legacy (no owner) — everyone can edit
+  if (!created_by) return true;
+  // Owner can always edit
+  if (created_by === actorId) return true;
+  // Others can edit if flag is set
+  return is_editable_by_others === true;
+}
+
+export async function canDeletePlaylist(playlistId: string, actorId: string): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    'SELECT created_by FROM playlists WHERE id = $1',
+    [playlistId]
+  );
+  if (rows.length === 0) return false;
+  const { created_by } = rows[0];
+  // Legacy (no owner) — everyone can delete
+  if (!created_by) return true;
+  // Only owner can delete
+  return created_by === actorId;
+}
+
+export async function canViewPlaylist(playlistId: string, actorId?: string): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    'SELECT created_by, is_public FROM playlists WHERE id = $1',
+    [playlistId]
+  );
+  if (rows.length === 0) return false;
+  const { created_by, is_public } = rows[0];
+  // Public or legacy (no owner) — everyone can view
+  if (is_public || !created_by) return true;
+  if (!actorId) return false;
+  return created_by === actorId;
 }
 
 function rowToFavorite(row: any): Favorite {
@@ -1295,9 +1351,44 @@ async function getPlaylistTrackIds(playlistId: string): Promise<string[]> {
   return rows.map((r: any) => r.track_id);
 }
 
-export async function getAllPlaylists(): Promise<Playlist[]> {
+/** Reusable JOIN query for playlist rows with denormalized user info */
+const PLAYLIST_SELECT = `
+  SELECT p.*,
+    owner.username  AS owner_username,
+    updater.username AS updated_by_username
+  FROM playlists p
+  LEFT JOIN users owner   ON p.created_by  = owner.id
+  LEFT JOIN users updater ON p.updated_by  = updater.id
+`;
+
+/**
+ * List playlists visible to actorId:
+ * - own playlists (created_by = actorId)
+ * - public playlists (is_public = true)
+ * - legacy playlists (created_by IS NULL)
+ * If no actorId, only public + legacy are returned.
+ */
+export async function getAllPlaylists(actorId?: string): Promise<Playlist[]> {
   const pool = getPool();
-  const { rows } = await pool.query('SELECT * FROM playlists ORDER BY created_at DESC');
+  let rows: any[];
+
+  if (actorId) {
+    ({ rows } = await pool.query(
+      `${PLAYLIST_SELECT}
+       WHERE p.created_by = $1
+          OR p.is_public = true
+          OR p.created_by IS NULL
+       ORDER BY p.created_at DESC`,
+      [actorId]
+    ));
+  } else {
+    ({ rows } = await pool.query(
+      `${PLAYLIST_SELECT}
+       WHERE p.is_public = true OR p.created_by IS NULL
+       ORDER BY p.created_at DESC`
+    ));
+  }
+
   const playlists: Playlist[] = [];
   for (const row of rows) {
     const trackIds = await getPlaylistTrackIds(row.id);
@@ -1306,19 +1397,20 @@ export async function getAllPlaylists(): Promise<Playlist[]> {
   return playlists;
 }
 
-/** Lookup by UUID or slug */
+/** Lookup by UUID or slug — joins user info */
 export async function getPlaylist(idOrSlug: string): Promise<Playlist | undefined> {
   const pool = getPool();
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
-  const { rows } = isUuid
-    ? await pool.query('SELECT * FROM playlists WHERE id = $1', [idOrSlug])
-    : await pool.query('SELECT * FROM playlists WHERE slug = $1', [idOrSlug]);
+  const isUuidVal = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+  const { rows } = await pool.query(
+    `${PLAYLIST_SELECT} WHERE ${isUuidVal ? 'p.id' : 'p.slug'} = $1`,
+    [idOrSlug]
+  );
   if (rows.length === 0) return undefined;
   const trackIds = await getPlaylistTrackIds(rows[0].id);
   return rowToPlaylist(rows[0], trackIds);
 }
 
-export async function createPlaylist(input: CreatePlaylistInput): Promise<Playlist> {
+export async function createPlaylist(input: CreatePlaylistInput, actorId?: string): Promise<Playlist> {
   const pool = getPool();
   const client = await pool.connect();
 
@@ -1328,21 +1420,31 @@ export async function createPlaylist(input: CreatePlaylistInput): Promise<Playli
     const now = new Date().toISOString();
     const slug = await generateUniqueSlug(pool, 'playlists', slugify(input.name));
 
-    const { rows } = await client.query(`
-      INSERT INTO playlists (id, slug, name, description, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $5)
-      RETURNING *
-    `, [id, slug, input.name, input.description ?? '', now]);
+    await client.query(`
+      INSERT INTO playlists
+        (id, slug, name, description, created_by, is_public, is_editable_by_others, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+    `, [
+      id, slug, input.name, input.description ?? '',
+      actorId || null,
+      input.isPublic ?? false,
+      input.isEditableByOthers ?? false,
+      now,
+    ]);
 
     // Insert track associations
     const trackIds = input.trackIds ?? [];
     for (let i = 0; i < trackIds.length; i++) {
-      await client.query(`
-        INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES ($1, $2, $3)
-      `, [id, trackIds[i], i]);
+      await client.query(
+        `INSERT INTO playlist_tracks (playlist_id, track_id, position, added_by) VALUES ($1, $2, $3, $4)`,
+        [id, trackIds[i], i, actorId || null]
+      );
     }
 
     await client.query('COMMIT');
+
+    // Re-fetch with JOIN to get owner info
+    const { rows } = await pool.query(`${PLAYLIST_SELECT} WHERE p.id = $1`, [id]);
     return rowToPlaylist(rows[0], trackIds);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1352,7 +1454,7 @@ export async function createPlaylist(input: CreatePlaylistInput): Promise<Playli
   }
 }
 
-export async function updatePlaylist(id: string, input: UpdatePlaylistInput): Promise<Playlist | null> {
+export async function updatePlaylist(id: string, input: UpdatePlaylistInput, actorId?: string): Promise<Playlist | null> {
   const pool = getPool();
   const client = await pool.connect();
 
@@ -1365,14 +1467,20 @@ export async function updatePlaylist(id: string, input: UpdatePlaylistInput): Pr
     let paramIdx = 1;
 
     if (input.name !== undefined) {
-      sets.push(`name = $${paramIdx}`);
-      values.push(input.name);
-      paramIdx++;
+      sets.push(`name = $${paramIdx}`); values.push(input.name); paramIdx++;
     }
     if (input.description !== undefined) {
-      sets.push(`description = $${paramIdx}`);
-      values.push(input.description);
-      paramIdx++;
+      sets.push(`description = $${paramIdx}`); values.push(input.description); paramIdx++;
+    }
+    if (input.isPublic !== undefined) {
+      sets.push(`is_public = $${paramIdx}`); values.push(input.isPublic); paramIdx++;
+    }
+    if (input.isEditableByOthers !== undefined) {
+      sets.push(`is_editable_by_others = $${paramIdx}`); values.push(input.isEditableByOthers); paramIdx++;
+    }
+    // Always stamp updated_by when making changes
+    if (actorId && sets.length > 0) {
+      sets.push(`updated_by = $${paramIdx}`); values.push(actorId); paramIdx++;
     }
 
     let playlistRow: any;
@@ -1398,19 +1506,25 @@ export async function updatePlaylist(id: string, input: UpdatePlaylistInput): Pr
 
     // Update track order if provided
     if (input.trackIds !== undefined) {
-      // Delete existing associations and re-insert
       await client.query('DELETE FROM playlist_tracks WHERE playlist_id = $1', [id]);
       for (let i = 0; i < input.trackIds.length; i++) {
-        await client.query(`
-          INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES ($1, $2, $3)
-        `, [id, input.trackIds[i], i]);
+        await client.query(
+          `INSERT INTO playlist_tracks (playlist_id, track_id, position, added_by) VALUES ($1, $2, $3, $4)`,
+          [id, input.trackIds[i], i, actorId || null]
+        );
+      }
+      // Also stamp updated_by if we only updated tracks (no field sets above)
+      if (sets.length === 0 && actorId) {
+        await client.query('UPDATE playlists SET updated_by = $1 WHERE id = $2', [actorId, id]);
       }
     }
 
     await client.query('COMMIT');
 
+    // Re-fetch with JOIN to get user info
+    const { rows: freshRows } = await pool.query(`${PLAYLIST_SELECT} WHERE p.id = $1`, [id]);
     const trackIds = input.trackIds ?? await getPlaylistTrackIds(id);
-    return rowToPlaylist(playlistRow, trackIds);
+    return rowToPlaylist(freshRows[0], trackIds);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

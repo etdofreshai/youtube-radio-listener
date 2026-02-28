@@ -227,7 +227,15 @@ export const getPlaylist = (id: string) => request<Playlist>(`/api/playlists/${i
 export const createPlaylist = (data: CreatePlaylistInput) =>
   request<Playlist>('/api/playlists', { method: 'POST', body: JSON.stringify(data) });
 
-export const updatePlaylist = (id: string, data: Partial<CreatePlaylistInput>) =>
+export interface UpdatePlaylistInput {
+  name?: string;
+  description?: string;
+  trackIds?: string[];
+  isPublic?: boolean;
+  isEditableByOthers?: boolean;
+}
+
+export const updatePlaylist = (id: string, data: UpdatePlaylistInput) =>
   request<Playlist>(`/api/playlists/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 
 export const deletePlaylist = (id: string) =>
@@ -401,6 +409,17 @@ export const toggleRadioStation = (idOrSlug: string) =>
 export function getRadioStreamUrl(station: RadioStation): string {
   return station.streamUrl;
 }
+
+/** Resolve M3U/playlist URLs to actual stream URLs via server */
+export interface ResolvedStream {
+  originalUrl: string;
+  streamUrl: string;
+  resolved: boolean;
+  error: string | null;
+}
+
+export const resolveRadioStream = (idOrSlug: string) =>
+  request<ResolvedStream>(`/api/radios/${encodeURIComponent(idOrSlug)}/resolve-stream`);
 
 // ---------- Users ----------
 

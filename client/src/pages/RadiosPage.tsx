@@ -87,6 +87,8 @@ function StationForm({ initial, onSave, onCancel, saving }: StationFormProps) {
 interface StationCardProps {
   station: RadioStation;
   isPlaying: boolean;
+  isLoading: boolean;
+  error: string | null;
   onPlay: () => void;
   onStop: () => void;
   onEdit: () => void;
@@ -94,15 +96,16 @@ interface StationCardProps {
   onToggleActive: () => void;
 }
 
-function StationCard({ station, isPlaying, onPlay, onStop, onEdit, onDelete, onToggleActive }: StationCardProps) {
+function StationCard({ station, isPlaying, isLoading, error, onPlay, onStop, onEdit, onDelete, onToggleActive }: StationCardProps) {
+  const isActive = isPlaying || isLoading;
   return (
     <div
-      className={`station-card${isPlaying ? ' station-card--playing' : ''}${!station.active ? ' station-card--inactive' : ''}`}
+      className={`station-card${isActive ? ' station-card--playing' : ''}${!station.active ? ' station-card--inactive' : ''}`}
       style={{
         background: 'var(--surface)',
         borderRadius: 8,
         padding: '1rem',
-        border: isPlaying ? '1px solid var(--accent, #60a5fa)' : '1px solid transparent',
+        border: isActive ? '1px solid var(--accent, #60a5fa)' : error ? '1px solid var(--error, #f87171)' : '1px solid transparent',
         opacity: station.active ? 1 : 0.55,
       }}
     >
@@ -111,9 +114,15 @@ function StationCard({ station, isPlaying, onPlay, onStop, onEdit, onDelete, onT
           <div style={{ fontWeight: 600, marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
             <LiveBadge isLive={station.isLive} />
             <span>{station.name}</span>
-            {isPlaying && <span style={{ fontSize: '0.75rem', color: 'var(--accent, #60a5fa)', animation: 'pulse 1.5s ease-in-out infinite' }}>▶ Playing</span>}
+            {isLoading && <span style={{ fontSize: '0.75rem', color: 'var(--accent, #60a5fa)' }}>⏳ Connecting…</span>}
+            {isPlaying && !isLoading && <span style={{ fontSize: '0.75rem', color: 'var(--accent, #60a5fa)', animation: 'pulse 1.5s ease-in-out infinite' }}>▶ Playing</span>}
             {!station.active && <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>(inactive)</span>}
           </div>
+          {error && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--error, #f87171)', marginBottom: '0.4rem' }}>
+              ❌ {error}
+            </div>
+          )}
           {station.description && (
             <div style={{ fontSize: '0.82rem', opacity: 0.7, marginBottom: '0.4rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {station.description}
@@ -145,7 +154,9 @@ function StationCard({ station, isPlaying, onPlay, onStop, onEdit, onDelete, onT
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flexShrink: 0 }}>
-          {isPlaying ? (
+          {isLoading ? (
+            <button className="btn btn-primary" onClick={onStop} title="Cancel">⏳ Loading…</button>
+          ) : isPlaying ? (
             <button className="btn btn-primary" onClick={onStop} title="Stop">⏹ Stop</button>
           ) : (
             <button className="btn btn-primary" onClick={onPlay} title="Play" disabled={!station.active}>
@@ -174,7 +185,7 @@ export default function RadiosPage() {
   const [saving, setSaving] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  const { playRadio, stop, currentRadio, isPlaying } = useAudioPlayer();
+  const { playRadio, stop, currentRadio, isPlaying, radioLoading, radioError } = useAudioPlayer();
 
   async function load() {
     setLoading(true);
@@ -308,6 +319,8 @@ export default function RadiosPage() {
               key={station.id}
               station={station}
               isPlaying={currentRadio?.id === station.id && isPlaying}
+              isLoading={currentRadio?.id === station.id && radioLoading}
+              error={currentRadio?.id === station.id ? radioError : null}
               onPlay={() => handlePlay(station)}
               onStop={handleStop}
               onEdit={() => { setEditingId(station.id); setShowAdd(false); }}

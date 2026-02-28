@@ -18,6 +18,8 @@ export default function PlaylistEditorPage() {
   // Editable metadata
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editIsPublic, setEditIsPublic] = useState(false);
+  const [editIsEditableByOthers, setEditIsEditableByOthers] = useState(false);
   const [metaDirty, setMetaDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -27,6 +29,8 @@ export default function PlaylistEditorPage() {
   // Drag state
   const dragItem = useRef<number | null>(null);
   const dragOver = useRef<number | null>(null);
+
+  const currentUserId = api.getActiveUserId() || '00000000-0000-0000-0000-000000000001';
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -42,6 +46,8 @@ export default function PlaylistEditorPage() {
       setAllTracks(tracksResult.data);
       setEditName(pl.name);
       setEditDesc(pl.description);
+      setEditIsPublic(pl.isPublic);
+      setEditIsEditableByOthers(pl.isEditableByOthers);
       setMetaDirty(false);
       setError('');
     } catch (e: unknown) {
@@ -70,6 +76,13 @@ export default function PlaylistEditorPage() {
     return t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q);
   });
 
+  /** Whether the current user can edit this playlist */
+  function canEdit(p: Playlist): boolean {
+    if (!p.ownerId) return true;
+    if (p.ownerId === currentUserId) return true;
+    return p.isEditableByOthers;
+  }
+
   // --- Handlers ---
 
   const handleSaveMeta = async () => {
@@ -79,6 +92,8 @@ export default function PlaylistEditorPage() {
       const updated = await api.updatePlaylist(playlist.id, {
         name: editName.trim(),
         description: editDesc.trim(),
+        isPublic: editIsPublic,
+        isEditableByOthers: editIsEditableByOthers,
       });
       setPlaylist(updated);
       setMetaDirty(false);
@@ -117,27 +132,19 @@ export default function PlaylistEditorPage() {
     const ids = [...playlist.trackIds];
     const [moved] = ids.splice(fromIndex, 1);
     ids.splice(toIndex, 0, moved);
-    // Optimistic update
     setPlaylist({ ...playlist, trackIds: ids });
     try {
       const updated = await api.reorderPlaylistTracks(playlist.id, ids);
       setPlaylist(updated);
     } catch (e: unknown) {
-      // Revert on error
       load();
       showToast(e instanceof Error ? e.message : 'Failed to reorder', 'error');
     }
   };
 
   // Drag-and-drop handlers
-  const handleDragStart = (index: number) => {
-    dragItem.current = index;
-  };
-
-  const handleDragEnter = (index: number) => {
-    dragOver.current = index;
-  };
-
+  const handleDragStart = (index: number) => { dragItem.current = index; };
+  const handleDragEnter = (index: number) => { dragOver.current = index; };
   const handleDragEnd = () => {
     if (dragItem.current !== null && dragOver.current !== null && dragItem.current !== dragOver.current) {
       handleMoveTrack(dragItem.current, dragOver.current);
@@ -174,6 +181,9 @@ export default function PlaylistEditorPage() {
     );
   }
 
+  const userCanEdit = canEdit(playlist);
+  const isOwner = !playlist.ownerId || playlist.ownerId === currentUserId;
+
   return (
     <div className="playlist-editor">
       {/* Header */}
@@ -184,9 +194,30 @@ export default function PlaylistEditorPage() {
           </button>
           <h1>Edit Playlist</h1>
         </div>
-        <button className="btn btn-danger btn-sm" onClick={handleDeletePlaylist}>
-          🗑 Delete Playlist
-        </button>
+        {isOwner && (
+          <button className="btn btn-danger btn-sm" onClick={handleDeletePlaylist}>
+            🗑 Delete Playlist
+          </button>
+        )}
+      </div>
+
+      {/* Ownership info */}
+      <div style={{
+        fontSize: '0.8rem', color: 'var(--text-muted)',
+        display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12,
+      }}>
+        {playlist.ownerUsername && (
+          <span>👤 Owner: <strong>{playlist.ownerUsername}</strong></span>
+        )}
+        {playlist.updatedByUsername && (
+          <span>📝 Last updated by: <strong>{playlist.updatedByUsername}</strong></span>
+        )}
+        {playlist.isPublic && (
+          <span style={{ color: 'var(--accent, #3b82f6)' }}>🌐 Public</span>
+        )}
+        {playlist.isEditableByOthers && (
+          <span style={{ color: 'var(--warning, #f59e0b)' }}>✏️ Editable by others</span>
+        )}
       </div>
 
       {/* Metadata section */}
@@ -199,6 +230,7 @@ export default function PlaylistEditorPage() {
               value={editName}
               onChange={e => { setEditName(e.target.value); setMetaDirty(true); }}
               placeholder="Playlist name"
+              disabled={!userCanEdit}
             />
           </div>
           <div className="form-group">
@@ -208,9 +240,33 @@ export default function PlaylistEditorPage() {
               onChange={e => { setEditDesc(e.target.value); setMetaDirty(true); }}
               placeholder="Optional description"
               rows={2}
+              disabled={!userCanEdit}
             />
           </div>
-          {metaDirty && (
+
+          {/* Sharing controls — only owner can change these */}
+          {isOwner && (
+            <div className="form-group" style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editIsPublic}
+                  onChange={e => { setEditIsPublic(e.target.checked); setMetaDirty(true); }}
+                />
+                🌐 Shareable (public)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editIsEditableByOthers}
+                  onChange={e => { setEditIsEditableByOthers(e.target.checked); setMetaDirty(true); }}
+                />
+                ✏️ Editable by others
+              </label>
+            </div>
+          )}
+
+          {metaDirty && userCanEdit && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
                 className="btn btn-primary btn-sm"
@@ -221,11 +277,23 @@ export default function PlaylistEditorPage() {
               </button>
               <button
                 className="btn btn-secondary btn-sm"
-                onClick={() => { setEditName(playlist.name); setEditDesc(playlist.description); setMetaDirty(false); }}
+                onClick={() => {
+                  setEditName(playlist.name);
+                  setEditDesc(playlist.description);
+                  setEditIsPublic(playlist.isPublic);
+                  setEditIsEditableByOthers(playlist.isEditableByOthers);
+                  setMetaDirty(false);
+                }}
               >
                 Cancel
               </button>
             </div>
+          )}
+
+          {!userCanEdit && (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+              🔒 You can view this playlist but not edit it.
+            </p>
           )}
         </div>
       </section>
@@ -240,7 +308,7 @@ export default function PlaylistEditorPage() {
           </h2>
           {playlistTracks.length === 0 ? (
             <div className="editor-empty">
-              <p>No tracks yet. Add tracks from the right panel →</p>
+              <p>No tracks yet. {userCanEdit ? 'Add tracks from the right panel →' : 'No tracks in this playlist.'}</p>
             </div>
           ) : (
             <div className="editor-track-list">
@@ -248,86 +316,84 @@ export default function PlaylistEditorPage() {
                 <div
                   key={track.id}
                   className="editor-track-item"
-                  draggable
-                  onDragStart={() => handleDragStart(index)}
-                  onDragEnter={() => handleDragEnter(index)}
-                  onDragEnd={handleDragEnd}
+                  draggable={userCanEdit}
+                  onDragStart={() => userCanEdit && handleDragStart(index)}
+                  onDragEnter={() => userCanEdit && handleDragEnter(index)}
+                  onDragEnd={() => userCanEdit && handleDragEnd()}
                   onDragOver={e => e.preventDefault()}
                 >
-                  <span className="editor-track-grip" title="Drag to reorder">⠿</span>
+                  {userCanEdit && <span className="editor-track-grip" title="Drag to reorder">⠿</span>}
                   <span className="editor-track-number">{index + 1}</span>
                   <div className="editor-track-info">
                     <div className="track-title">{track.title}</div>
                     <div className="track-artist">{track.artist}</div>
                   </div>
-                  <div className="editor-track-actions">
-                    <button
-                      className="btn-icon"
-                      title="Move up"
-                      disabled={index === 0}
-                      onClick={() => handleMoveTrack(index, index - 1)}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      className="btn-icon"
-                      title="Move down"
-                      disabled={index === playlistTracks.length - 1}
-                      onClick={() => handleMoveTrack(index, index + 1)}
-                    >
-                      ▼
-                    </button>
-                    <button
-                      className="btn-icon editor-remove-btn"
-                      title="Remove from playlist"
-                      onClick={() => handleRemoveTrack(track.id)}
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  {userCanEdit && (
+                    <div className="editor-track-actions">
+                      <button
+                        className="btn-icon"
+                        title="Move up"
+                        disabled={index === 0}
+                        onClick={() => handleMoveTrack(index, index - 1)}
+                      >▲</button>
+                      <button
+                        className="btn-icon"
+                        title="Move down"
+                        disabled={index === playlistTracks.length - 1}
+                        onClick={() => handleMoveTrack(index, index + 1)}
+                      >▼</button>
+                      <button
+                        className="btn-icon editor-remove-btn"
+                        title="Remove from playlist"
+                        onClick={() => handleRemoveTrack(track.id)}
+                      >✕</button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </section>
 
-        {/* Right: Available tracks */}
-        <section className="editor-section editor-panel">
-          <h2 className="editor-section-title">
-            Available Tracks
-            <span className="editor-count">{availableTracks.length}</span>
-          </h2>
-          <div className="form-group" style={{ marginBottom: 12 }}>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="🔍 Search tracks..."
-              style={{ fontSize: '0.85rem' }}
-            />
-          </div>
-          {availableTracks.length === 0 ? (
-            <div className="editor-empty">
-              <p>{search ? 'No matching tracks' : allTracks.length === 0 ? 'No tracks exist yet' : 'All tracks are in this playlist'}</p>
+        {/* Right: Available tracks — only shown if user can edit */}
+        {userCanEdit && (
+          <section className="editor-section editor-panel">
+            <h2 className="editor-section-title">
+              Available Tracks
+              <span className="editor-count">{availableTracks.length}</span>
+            </h2>
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="🔍 Search tracks..."
+                style={{ fontSize: '0.85rem' }}
+              />
             </div>
-          ) : (
-            <div className="editor-track-list">
-              {availableTracks.map(track => (
-                <div key={track.id} className="editor-track-item editor-track-available">
-                  <div className="editor-track-info">
-                    <div className="track-title">{track.title}</div>
-                    <div className="track-artist">{track.artist}</div>
+            {availableTracks.length === 0 ? (
+              <div className="editor-empty">
+                <p>{search ? 'No matching tracks' : allTracks.length === 0 ? 'No tracks exist yet' : 'All tracks are in this playlist'}</p>
+              </div>
+            ) : (
+              <div className="editor-track-list">
+                {availableTracks.map(track => (
+                  <div key={track.id} className="editor-track-item editor-track-available">
+                    <div className="editor-track-info">
+                      <div className="track-title">{track.title}</div>
+                      <div className="track-artist">{track.artist}</div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleAddTrack(track.id)}
+                    >
+                      + Add
+                    </button>
                   </div>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleAddTrack(track.id)}
-                  >
-                    + Add
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       {/* Toast */}

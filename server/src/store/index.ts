@@ -98,24 +98,40 @@ export function getTracksByAlbum(albumId: string) {
 // Playlists
 // ============================================================
 
-export function getAllPlaylists() {
-  return usePostgres ? pgStore.getAllPlaylists() : wrap(memStore.getAllPlaylists());
+export function getAllPlaylists(actorId?: string) {
+  return usePostgres ? pgStore.getAllPlaylists(actorId) : wrap(memStore.getAllPlaylists());
 }
 
 export function getPlaylist(id: string) {
   return usePostgres ? pgStore.getPlaylist(id) : wrap(memStore.getPlaylist(id));
 }
 
-export function createPlaylist(...args: Parameters<typeof memStore.createPlaylist>) {
-  return usePostgres ? pgStore.createPlaylist(...args) : wrap(memStore.createPlaylist(...args));
+export function createPlaylist(input: Parameters<typeof memStore.createPlaylist>[0], actorId?: string) {
+  return usePostgres ? pgStore.createPlaylist(input, actorId) : wrap(memStore.createPlaylist(input));
 }
 
-export function updatePlaylist(...args: Parameters<typeof memStore.updatePlaylist>) {
-  return usePostgres ? pgStore.updatePlaylist(...args) : wrap(memStore.updatePlaylist(...args));
+export function updatePlaylist(id: string, input: Parameters<typeof memStore.updatePlaylist>[1], actorId?: string) {
+  return usePostgres ? pgStore.updatePlaylist(id, input, actorId) : wrap(memStore.updatePlaylist(id, input));
 }
 
 export function deletePlaylist(id: string) {
   return usePostgres ? pgStore.deletePlaylist(id) : wrap(memStore.deletePlaylist(id));
+}
+
+// Permission helpers (postgres-only; memory store is always open)
+export function canEditPlaylist(playlistId: string, actorId: string): Promise<boolean> {
+  if (!usePostgres) return Promise.resolve(true);
+  return pgStore.canEditPlaylist(playlistId, actorId);
+}
+
+export function canDeletePlaylist(playlistId: string, actorId: string): Promise<boolean> {
+  if (!usePostgres) return Promise.resolve(true);
+  return pgStore.canDeletePlaylist(playlistId, actorId);
+}
+
+export function canViewPlaylist(playlistId: string, actorId?: string): Promise<boolean> {
+  if (!usePostgres) return Promise.resolve(true);
+  return pgStore.canViewPlaylist(playlistId, actorId);
 }
 
 // ============================================================

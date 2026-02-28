@@ -324,6 +324,13 @@ export interface Playlist {
   name: string;
   description: string;
   trackIds: string[];
+  // Ownership / sharing (v11)
+  ownerId: string | null;
+  ownerUsername: string | null;
+  updatedBy: string | null;
+  updatedByUsername: string | null;
+  isPublic: boolean;
+  isEditableByOthers: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -438,6 +445,8 @@ export interface CreatePlaylistInput {
   name: string;
   description?: string;
   trackIds?: string[];
+  isPublic?: boolean;
+  isEditableByOthers?: boolean;
 }
 
 // ---------- Radio Stations ----------

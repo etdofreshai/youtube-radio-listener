@@ -163,6 +163,13 @@ export interface Playlist {
   slug: string | null;
   description: string;
   trackIds: string[];
+  // Ownership / sharing
+  ownerId: string | null;       // created_by user id
+  ownerUsername: string | null; // denormalized for display
+  updatedBy: string | null;     // last editor user id
+  updatedByUsername: string | null; // denormalized for display
+  isPublic: boolean;            // visible to all users
+  isEditableByOthers: boolean;  // editable by any authenticated user
   createdAt: string;
   updatedAt: string;
 }
@@ -417,12 +424,16 @@ export interface CreatePlaylistInput {
   name: string;
   description?: string;
   trackIds?: string[];
+  isPublic?: boolean;
+  isEditableByOthers?: boolean;
 }
 
 export interface UpdatePlaylistInput {
   name?: string;
   description?: string;
   trackIds?: string[];
+  isPublic?: boolean;
+  isEditableByOthers?: boolean;
 }
 
 export interface CreateUserInput {
