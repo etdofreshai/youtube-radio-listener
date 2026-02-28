@@ -241,6 +241,12 @@ create table like_events (
    - Any clipping/downloading must comply with platform ToS, copyright law, and local regulations.
    - Prefer "save references/playlist metadata" over storing copyrighted media files.
    - If introduced, require clear legal policy, DMCA workflow, and jurisdiction review before launch.
+4. **Apple ecosystem offline sync (stretch goal)**
+   - Build native **iOS + watchOS** companion apps for local-file sync and playback.
+   - Server stores library metadata, permissions, and sync state.
+   - iPhone app manages account/auth and orchestrates watch sync.
+   - Watch app supports on-watch playback and optional direct network sync where feasible.
+   - Initial implementation should assume iPhone-mediated transfer for reliability, then expand to direct watch sync where platform constraints allow.
 
 ---
 

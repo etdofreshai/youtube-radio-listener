@@ -3,6 +3,7 @@ import type {
   Track, Playlist, Favorite,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
+  AudioStatus,
 } from '../types';
 
 // ---------- In-memory store ----------
@@ -32,10 +33,16 @@ export function createTrack(input: CreateTrackInput): Track {
     artist: input.artist,
     startTimeSec: input.startTimeSec ?? null,
     endTimeSec: input.endTimeSec ?? null,
-    volume: input.volume ?? 80,
+    volume: input.volume ?? 100,
     notes: input.notes ?? '',
     createdAt: now,
     updatedAt: now,
+    // Audio fields
+    audioStatus: 'pending',
+    audioError: null,
+    audioFilename: null,
+    duration: null,
+    lastDownloadAt: null,
   };
   tracks.set(track.id, track);
   return track;
@@ -47,6 +54,31 @@ export function updateTrack(id: string, input: UpdateTrackInput): Track | null {
   const updated: Track = {
     ...existing,
     ...input,
+    updatedAt: new Date().toISOString(),
+  };
+  tracks.set(id, updated);
+  return updated;
+}
+
+export function updateTrackAudio(
+  id: string,
+  fields: {
+    audioStatus: AudioStatus;
+    audioError?: string | null;
+    audioFilename?: string | null;
+    duration?: number | null;
+    lastDownloadAt?: string | null;
+  }
+): Track | null {
+  const existing = tracks.get(id);
+  if (!existing) return null;
+  const updated: Track = {
+    ...existing,
+    audioStatus: fields.audioStatus,
+    audioError: fields.audioError ?? existing.audioError,
+    audioFilename: fields.audioFilename ?? existing.audioFilename,
+    duration: fields.duration ?? existing.duration,
+    lastDownloadAt: fields.lastDownloadAt ?? existing.lastDownloadAt,
     updatedAt: new Date().toISOString(),
   };
   tracks.set(id, updated);

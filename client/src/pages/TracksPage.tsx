@@ -1,23 +1,43 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Track, CreateTrackInput, UpdateTrackInput } from '../types';
 import * as api from '../api';
 import TrackForm from '../components/TrackForm';
+import { useAudioPlayer } from '../components/AudioPlayer';
 
 export default function TracksPage() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Track | null>(null);
   const [error, setError] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const { play, pause, currentTrack, isPlaying, setPlaylist } = useAudioPlayer();
 
   const load = useCallback(async () => {
     try {
-      setTracks(await api.getTracks());
+      const data = await api.getTracks();
+      setTracks(data);
+      setPlaylist(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load tracks');
     }
-  }, []);
+  }, [setPlaylist]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Poll for status updates while any track is downloading
+  useEffect(() => {
+    const hasDownloading = tracks.some(t => t.audioStatus === 'downloading' || t.audioStatus === 'pending');
+    if (hasDownloading && !pollRef.current) {
+      pollRef.current = setInterval(load, 3000);
+    } else if (!hasDownloading && pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [tracks, load]);
 
   const handleCreate = async (data: CreateTrackInput) => {
     await api.createTrack(data);
@@ -38,6 +58,50 @@ export default function TracksPage() {
     load();
   };
 
+  const handlePlay = (track: Track) => {
+    if (currentTrack?.id === track.id && isPlaying) {
+      pause();
+    } else {
+      play(track);
+    }
+  };
+
+  const handleRefresh = async (id: string) => {
+    await api.refreshTrack(id);
+    load();
+  };
+
+  const handleDownload = async (id: string) => {
+    await api.downloadTrack(id);
+    load();
+  };
+
+  function formatDuration(sec: number | null): string {
+    if (!sec) return '—';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function AudioStatusBadge({ track }: { track: Track }) {
+    switch (track.audioStatus) {
+      case 'ready':
+        return <span className="badge badge-ready">● Ready</span>;
+      case 'downloading':
+        return <span className="badge badge-downloading">⏳ Downloading…</span>;
+      case 'pending':
+        return <span className="badge badge-pending">○ Pending</span>;
+      case 'error':
+        return (
+          <span className="badge badge-error" title={track.audioError || 'Download failed'}>
+            ✕ Error
+          </span>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
     <>
       <div className="page-header">
@@ -56,38 +120,75 @@ export default function TracksPage() {
         </div>
       ) : (
         <div className="track-list">
-          <div className="track-row" style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
+          <div className="track-row track-header">
+            <span></span>
             <span>Title / Artist</span>
-            <span>YouTube URL</span>
-            <span>Time Range</span>
+            <span>Duration</span>
+            <span>Status</span>
             <span>Vol</span>
             <span>Actions</span>
           </div>
-          {tracks.map(t => (
-            <div key={t.id} className="track-row">
-              <div>
-                <div className="track-title">{t.title}</div>
-                <div className="track-artist">{t.artist}</div>
+          {tracks.map(t => {
+            const isCurrent = currentTrack?.id === t.id;
+            const canPlay = t.audioStatus === 'ready';
+            return (
+              <div key={t.id} className={`track-row ${isCurrent ? 'track-active' : ''}`}>
+                {/* Play button */}
+                <div>
+                  {canPlay ? (
+                    <button
+                      className={`btn-play ${isCurrent && isPlaying ? 'playing' : ''}`}
+                      onClick={() => handlePlay(t)}
+                      title={isCurrent && isPlaying ? 'Pause' : 'Play'}
+                    >
+                      {isCurrent && isPlaying ? '⏸' : '▶'}
+                    </button>
+                  ) : t.audioStatus === 'downloading' ? (
+                    <span className="btn-play disabled" title="Downloading...">⏳</span>
+                  ) : (
+                    <span className="btn-play disabled" title="Audio not ready">▶</span>
+                  )}
+                </div>
+
+                {/* Title / Artist */}
+                <div>
+                  <div className="track-title">{t.title}</div>
+                  <div className="track-artist">{t.artist}</div>
+                </div>
+
+                {/* Duration */}
+                <div className="track-meta">{formatDuration(t.duration)}</div>
+
+                {/* Status */}
+                <div>
+                  <AudioStatusBadge track={t} />
+                </div>
+
+                {/* Volume */}
+                <div className="track-meta">{t.volume}%</div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {t.audioStatus === 'ready' && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleRefresh(t.id)} title="Re-download audio">
+                      🔄
+                    </button>
+                  )}
+                  {(t.audioStatus === 'error' || t.audioStatus === 'pending') && (
+                    <button className="btn btn-primary btn-sm" onClick={() => handleDownload(t.id)} title="Download audio">
+                      ⬇️
+                    </button>
+                  )}
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditing(t); setShowForm(true); }}>
+                    Edit
+                  </button>
+                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t.id)}>
+                    ✕
+                  </button>
+                </div>
               </div>
-              <div className="track-meta" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {t.youtubeUrl}
-              </div>
-              <div className="track-meta">
-                {t.startTimeSec != null || t.endTimeSec != null
-                  ? `${t.startTimeSec ?? 0}s – ${t.endTimeSec ?? '∞'}s`
-                  : '—'}
-              </div>
-              <div className="track-meta">{t.volume}%</div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => { setEditing(t); setShowForm(true); }}>
-                  Edit
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t.id)}>
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

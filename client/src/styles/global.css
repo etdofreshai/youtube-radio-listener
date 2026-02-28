@@ -184,16 +184,6 @@ a:hover {
   gap: 2px;
 }
 
-.track-row {
-  display: grid;
-  grid-template-columns: 1fr 180px 100px 80px 100px;
-  align-items: center;
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  transition: background 0.15s;
-  gap: 12px;
-}
-
 .track-row:hover {
   background: var(--bg-hover);
 }
@@ -356,6 +346,233 @@ a:hover {
 @keyframes slideIn {
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* Track row — updated grid with play column */
+.track-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 80px 120px 60px 160px;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  transition: background 0.15s;
+  gap: 12px;
+}
+
+.track-header {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.track-active {
+  background: var(--bg-tertiary);
+  border-left: 3px solid var(--accent);
+}
+
+/* Play button */
+.btn-play {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.btn-play:hover {
+  background: var(--accent-hover);
+  transform: scale(1.1);
+}
+
+.btn-play.playing {
+  background: var(--accent-hover);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
+}
+
+.btn-play.disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Audio status badges */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-ready {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.badge-downloading {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--accent);
+  animation: pulse-badge 1.5s ease-in-out infinite;
+}
+
+.badge-pending {
+  background: rgba(160, 160, 176, 0.1);
+  color: var(--text-muted);
+}
+
+.badge-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  cursor: help;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ---------- Bottom Player Bar ---------- */
+.player-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 24px;
+  z-index: 50;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.player-track-info {
+  min-width: 180px;
+  max-width: 240px;
+  overflow: hidden;
+}
+
+.player-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-artist {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-play-btn {
+  font-size: 1.2rem;
+}
+
+.player-progress {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-seek {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.player-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+
+.player-volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+}
+
+.player-volume-slider {
+  width: 80px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.player-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  cursor: pointer;
+}
+
+.player-volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+}
+
+/* Adjust main content when player is visible */
+.main-content {
+  padding-bottom: 90px;
 }
 
 /* Scrollbar */

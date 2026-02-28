@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS tracks (
   artist TEXT NOT NULL,
   start_time_sec INTEGER,
   end_time_sec INTEGER,
-  volume INTEGER NOT NULL DEFAULT 80 CHECK (volume >= 0 AND volume <= 100),
+  volume INTEGER NOT NULL DEFAULT 100 CHECK (volume >= 0 AND volume <= 200),
   notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

@@ -1,3 +1,5 @@
+export type AudioStatus = 'pending' | 'downloading' | 'ready' | 'error';
+
 export interface Track {
   id: string;
   youtubeUrl: string;
@@ -5,10 +7,16 @@ export interface Track {
   artist: string;
   startTimeSec: number | null;
   endTimeSec: number | null;
-  volume: number; // 0-100
+  volume: number; // 0-200 (percentage; >100 = amplification via gain)
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // Audio pipeline fields
+  audioStatus: AudioStatus;
+  audioError: string | null;
+  audioFilename: string | null;  // filename in audio/ dir
+  duration: number | null;       // seconds
+  lastDownloadAt: string | null;
 }
 
 export interface Playlist {

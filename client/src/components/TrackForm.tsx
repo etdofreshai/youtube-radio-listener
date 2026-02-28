@@ -13,7 +13,7 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
   const [artist, setArtist] = useState(initial?.artist ?? '');
   const [startTimeSec, setStartTimeSec] = useState(initial?.startTimeSec?.toString() ?? '');
   const [endTimeSec, setEndTimeSec] = useState(initial?.endTimeSec?.toString() ?? '');
-  const [volume, setVolume] = useState(initial?.volume?.toString() ?? '80');
+  const [volume, setVolume] = useState(initial?.volume?.toString() ?? '100');
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -33,7 +33,7 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
         artist: artist.trim(),
         startTimeSec: startTimeSec ? parseInt(startTimeSec, 10) : null,
         endTimeSec: endTimeSec ? parseInt(endTimeSec, 10) : null,
-        volume: volume ? parseInt(volume, 10) : 80,
+        volume: volume ? Math.min(200, Math.max(0, parseInt(volume, 10))) : 100,
         notes: notes.trim(),
       });
     } catch (err: unknown) {
@@ -75,8 +75,13 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
       </div>
 
       <div className="form-group">
-        <label>Volume ({volume}%)</label>
-        <input type="range" min="0" max="100" value={volume} onChange={e => setVolume(e.target.value)} />
+        <label>Volume ({volume}%){parseInt(volume) > 100 ? ' ⚡ Boost' : ''}</label>
+        <input type="range" min="0" max="200" value={volume} onChange={e => setVolume(e.target.value)} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
+          <span>0%</span>
+          <span>100%</span>
+          <span>200%</span>
+        </div>
       </div>
 
       <div className="form-group">

@@ -6,6 +6,7 @@ import healthRouter from './routes/health';
 import tracksRouter from './routes/tracks';
 import playlistsRouter from './routes/playlists';
 import favoritesRouter from './routes/favorites';
+import audioRouter from './routes/audio';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -19,6 +20,7 @@ app.use('/api', healthRouter);
 app.use('/api/tracks', tracksRouter);
 app.use('/api/playlists', playlistsRouter);
 app.use('/api/favorites', favoritesRouter);
+app.use('/api/audio', audioRouter);
 
 // Serve static frontend in production
 const clientDist = path.join(__dirname, '../../client/dist');
