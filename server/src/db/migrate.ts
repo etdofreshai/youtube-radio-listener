@@ -445,13 +445,16 @@ CREATE TRIGGER update_radio_stations_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 -- Seed default: Rainwave OCR Remix
+-- Direct OGG stream (no credentials required). Previously used the M3U playlist
+-- at http://rainwave.cc/tune_in/2.mp3 which resolved to relay.rainwave.cc:443/ocremix.mp3.
+-- The direct OGG endpoint is more reliable and avoids the M3U resolution round-trip.
 INSERT INTO radio_stations (id, name, slug, stream_url, homepage_url, description, is_live, active, tags)
 VALUES (
   '00000000-0000-0000-0000-000000000010',
   'Rainwave OCR Remix',
   'rainwave-ocr-remix',
-  'http://rainwave.cc/tune_in/2.mp3',
-  'http://rainwave.cc/ocremix/',
+  'https://relay.rainwave.cc/ocremix.ogg',
+  'https://rainwave.cc/ocremix/',
   '24/7 live radio of video game music remixes from OverClocked ReMix, curated by Rainwave.',
   true,
   true,
