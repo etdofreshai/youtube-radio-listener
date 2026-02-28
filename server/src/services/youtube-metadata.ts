@@ -112,6 +112,79 @@ export function isValidYouTubeUrl(url: string): boolean {
   }
 }
 
+/** Result from YouTube search via yt-dlp */
+export interface YouTubeSearchResultItem {
+  videoId: string;
+  title: string;
+  channel: string;
+  channelId: string | null;
+  duration: number | null;       // seconds
+  thumbnailUrl: string | null;
+  viewCount: number | null;
+  youtubeUrl: string;
+}
+
+/**
+ * Search YouTube videos via yt-dlp flat-playlist search.
+ * Returns up to `maxResults` items (default 10, max 20).
+ */
+export async function searchYouTube(query: string, maxResults = 10): Promise<YouTubeSearchResultItem[]> {
+  if (!query || !query.trim()) {
+    throw new Error('Search query is required');
+  }
+
+  if (!ytDlpAvailable()) {
+    throw new Error('yt-dlp is not available. Cannot search YouTube.');
+  }
+
+  const count = Math.min(Math.max(1, maxResults), 20);
+
+  const { stdout } = await execFileAsync(ytDlpBin(), [
+    `ytsearch${count}:${query.trim()}`,
+    '--dump-json',
+    '--no-download',
+    '--flat-playlist',
+    '--no-warnings',
+  ], { timeout: 30_000, maxBuffer: 10 * 1024 * 1024 });
+
+  // yt-dlp outputs one JSON object per line
+  const lines = stdout.trim().split('\n').filter(Boolean);
+  const results: YouTubeSearchResultItem[] = [];
+
+  for (const line of lines) {
+    try {
+      const info = JSON.parse(line);
+      const videoId = info.id;
+      if (!videoId) continue;
+
+      results.push({
+        videoId,
+        title: info.title || '',
+        channel: info.channel || info.uploader || '',
+        channelId: info.channel_id || null,
+        duration: typeof info.duration === 'number' && info.duration > 0 ? Math.round(info.duration) : null,
+        thumbnailUrl: pickBestThumbnail(info.thumbnails) || null,
+        viewCount: typeof info.view_count === 'number' ? info.view_count : null,
+        youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+      });
+    } catch {
+      // skip malformed lines
+    }
+  }
+
+  return results;
+}
+
+/** Pick the best quality thumbnail from yt-dlp's thumbnail array. */
+function pickBestThumbnail(thumbnails: any): string | null {
+  if (!Array.isArray(thumbnails) || thumbnails.length === 0) return null;
+  // Prefer the one with larger width/height
+  const sorted = [...thumbnails]
+    .filter((t: any) => t.url)
+    .sort((a: any, b: any) => (b.width || 0) - (a.width || 0));
+  return sorted[0]?.url || thumbnails[0]?.url || null;
+}
+
 /**
  * Fetch video metadata from YouTube via yt-dlp --dump-json.
  * Throws on failure (invalid URL, network issues, etc.).

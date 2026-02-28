@@ -2,6 +2,7 @@ import type {
   Track, Playlist, Favorite, CreateTrackInput, UpdateTrackInput, CreatePlaylistInput,
   PaginatedResponse, SortableTrackField, SortDirection, SchedulerStatus,
   PaginatedEvents, PlaySession, SessionState, SessionMember, SessionFull,
+  YouTubeSearchResponse,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL || '';
@@ -80,6 +81,12 @@ export const getEnrichmentStatus = () =>
 
 export const forceEnrichmentTick = () =>
   request<{ message: string; status: SchedulerStatus }>('/api/tracks/enrichment/tick', { method: 'POST' });
+
+// YouTube Search
+export const searchYouTube = (query: string, maxResults = 10) => {
+  const params = new URLSearchParams({ q: query, maxResults: String(maxResults) });
+  return request<YouTubeSearchResponse>(`/api/tracks/search-youtube?${params}`);
+};
 
 // Audio URL helper
 export function getAudioUrl(trackId: string): string {

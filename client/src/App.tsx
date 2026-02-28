@@ -6,6 +6,7 @@ import FavoritesPage from './pages/FavoritesPage';
 import HistoryPage from './pages/HistoryPage';
 import SessionsPage from './pages/SessionsPage';
 import SessionPage from './pages/SessionPage';
+import NowPlayingPage from './pages/NowPlayingPage';
 import { AudioPlayerProvider, PlayerBar } from './components/AudioPlayer';
 
 function App() {
@@ -15,6 +16,9 @@ function App() {
         <aside className="sidebar">
           <div className="sidebar-logo">🌊 Nightwave</div>
           <nav className="sidebar-nav">
+            <NavLink to="/now-playing" className={({ isActive }) => isActive ? 'active' : ''}>
+              🎶 Now Playing
+            </NavLink>
             <NavLink to="/" end className={({ isActive }) => isActive ? 'active' : ''}>
               🎵 Tracks
             </NavLink>
@@ -41,6 +45,7 @@ function App() {
             <Route path="/sessions" element={<SessionsPage />} />
             <Route path="/session/:token" element={<SessionPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/now-playing" element={<NowPlayingPage />} />
           </Routes>
         </main>
         <PlayerBar />

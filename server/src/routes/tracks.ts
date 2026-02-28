@@ -3,7 +3,7 @@ import * as store from '../store';
 import { downloadTrackAudio, refreshTrackAudio } from '../downloader';
 import { enrichTrack, enrichTrackSync, enrichAllTracks, listProviders, budgetTracker } from '../services/enrichment';
 import { getSchedulerStatus, forceTick, startScheduler, stopScheduler } from '../services/scheduler';
-import { fetchYouTubeMetadata, parseArtistTitle, isValidYouTubeUrl } from '../services/youtube-metadata';
+import { fetchYouTubeMetadata, parseArtistTitle, isValidYouTubeUrl, searchYouTube } from '../services/youtube-metadata';
 import type { CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection } from '../types';
 
 const router = Router();
@@ -52,6 +52,30 @@ router.post('/enrichment/start', async (_req, res) => {
 router.post('/enrichment/stop', async (_req, res) => {
   stopScheduler();
   res.json({ message: 'Scheduler stopped', status: await getSchedulerStatus() });
+});
+
+// GET /api/tracks/search-youtube?q=...&maxResults=10
+router.get('/search-youtube', async (req, res) => {
+  const q = (req.query.q as string || '').trim();
+  if (!q) {
+    res.status(400).json({ error: 'Query parameter "q" is required' });
+    return;
+  }
+  if (q.length > 200) {
+    res.status(400).json({ error: 'Query too long (max 200 characters)' });
+    return;
+  }
+
+  const maxResults = Math.min(20, Math.max(1, parseInt(req.query.maxResults as string, 10) || 10));
+
+  try {
+    const results = await searchYouTube(q, maxResults);
+    res.json({ results, query: q });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[tracks] YouTube search failed:', msg);
+    res.status(500).json({ error: 'YouTube search failed', detail: msg });
+  }
 });
 
 // POST /api/tracks/enrich-all — batch enqueue

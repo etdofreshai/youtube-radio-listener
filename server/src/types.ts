@@ -77,7 +77,7 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   youtubeUrl: string;
   title: string;
   artist: string;
-  artistId: string | null;  // FK to artists table
+  artistId: string | null;  // FK to artists table (primary/legacy)
   albumId: string | null;   // FK to albums table
   startTimeSec: number | null;
   endTimeSec: number | null;
@@ -91,6 +91,18 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   audioFilename: string | null;
   duration: number | null;
   lastDownloadAt: string | null;
+  // Populated relations (optional — included in API responses)
+  artists?: ArtistSummary[];     // all linked artists (from track_artists join)
+  albumName?: string | null;     // denormalized album title
+  albumSlug?: string | null;     // denormalized album slug
+}
+
+/** Lightweight artist reference embedded in track responses */
+export interface ArtistSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;  // 'primary' | 'featured' | 'remix'
 }
 
 // ---------- Artist ----------
@@ -188,6 +200,7 @@ export interface CreateTrackInput {
   youtubeUrl: string;
   title?: string;
   artist?: string;
+  artistIds?: string[];   // link to multiple artists by ID
   startTimeSec?: number | null;
   endTimeSec?: number | null;
   volume?: number;
@@ -198,6 +211,8 @@ export interface UpdateTrackInput {
   youtubeUrl?: string;
   title?: string;
   artist?: string;
+  artistIds?: string[];   // replace linked artists
+  albumId?: string | null;
   startTimeSec?: number | null;
   endTimeSec?: number | null;
   volume?: number;

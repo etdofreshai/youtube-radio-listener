@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Track, CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection, EnrichmentStatus } from '../types';
 import * as api from '../api';
 import TrackForm from '../components/TrackForm';
+import YouTubeSearch from '../components/YouTubeSearch';
 import { useAudioPlayer } from '../components/AudioPlayer';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
@@ -32,6 +33,7 @@ export default function TracksPage() {
   const [expandedTrackId, setExpandedTrackId] = useState<string | null>(null);
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
+  const [showYtSearch, setShowYtSearch] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Pagination + sort
@@ -369,11 +371,24 @@ export default function TracksPage() {
                 onClick={() => { setSearchInput(''); setSearch(''); setPage(1); }} title="Clear search">✕</button>
             )}
           </form>
+          <button
+            className={`btn ${showYtSearch ? 'btn-secondary' : 'btn-primary'}`}
+            onClick={() => setShowYtSearch(v => !v)}
+          >
+            {showYtSearch ? '✕ Close Search' : '🔍 YouTube Search'}
+          </button>
           <button className="btn btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>
             + Add Track
           </button>
         </div>
       </div>
+
+      {showYtSearch && (
+        <YouTubeSearch
+          existingTracks={tracks}
+          onTrackAdded={load}
+        />
+      )}
 
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 

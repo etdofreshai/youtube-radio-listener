@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import type { Track } from '../types';
 import { getAudioUrl } from '../api';
 
@@ -207,8 +208,10 @@ export function PlayerBar() {
   return (
     <div className="player-bar">
       <div className="player-track-info">
-        <div className="player-title">{currentTrack.title}</div>
-        <div className="player-artist">{currentTrack.artist}</div>
+        <Link to="/now-playing" className="player-now-playing-link" title="Open Now Playing">
+          <div className="player-title">{currentTrack.title}</div>
+          <div className="player-artist">{currentTrack.artist}</div>
+        </Link>
       </div>
 
       <div className="player-controls">

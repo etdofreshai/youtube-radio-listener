@@ -184,6 +184,26 @@ export interface Favorite {
   track?: Track | null;
 }
 
+// ---------- YouTube Search ----------
+
+export interface YouTubeSearchResultItem {
+  videoId: string;
+  title: string;
+  channel: string;
+  channelId: string | null;
+  duration: number | null;
+  thumbnailUrl: string | null;
+  viewCount: number | null;
+  youtubeUrl: string;
+}
+
+export interface YouTubeSearchResponse {
+  results: YouTubeSearchResultItem[];
+  query: string;
+}
+
+// ---------- Input types ----------
+
 export interface CreateTrackInput {
   youtubeUrl: string;
   title?: string;

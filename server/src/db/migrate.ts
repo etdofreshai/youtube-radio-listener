@@ -319,6 +319,23 @@ CREATE TRIGGER update_play_sessions_updated_at
   BEFORE UPDATE ON play_sessions
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================
+-- v6: Multi-artist support (track_artists join table)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS track_artists (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  track_id UUID NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  artist_id UUID NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'primary',   -- 'primary' | 'featured' | 'remix'
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (track_id, artist_id)
+);
+CREATE INDEX IF NOT EXISTS idx_track_artists_track ON track_artists(track_id);
+CREATE INDEX IF NOT EXISTS idx_track_artists_artist ON track_artists(artist_id);
+CREATE INDEX IF NOT EXISTS idx_track_artists_position ON track_artists(track_id, position);
 `;
 
 /**

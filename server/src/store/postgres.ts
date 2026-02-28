@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../db/pool';
 import type {
   Track, Playlist, Favorite,
-  Artist, Album,
+  Artist, Album, ArtistSummary,
   PlaySession, SessionMember, SessionState, SessionEvent,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
@@ -81,6 +81,112 @@ function rowToTrack(row: any): Track {
   };
 }
 
+// ============================================================
+// Track-Artists Join Table Helpers
+// ============================================================
+
+/** Get all artists linked to a track (ordered by position) */
+async function getTrackArtists(trackId: string): Promise<ArtistSummary[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT a.id, a.name, a.slug, ta.role
+    FROM track_artists ta
+    JOIN artists a ON ta.artist_id = a.id
+    WHERE ta.track_id = $1
+    ORDER BY ta.position ASC
+  `, [trackId]);
+  return rows.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    role: r.role || 'primary',
+  }));
+}
+
+/** Get artists for multiple tracks in a single query (batch) */
+async function getTrackArtistsBatch(trackIds: string[]): Promise<Map<string, ArtistSummary[]>> {
+  if (trackIds.length === 0) return new Map();
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT ta.track_id, a.id, a.name, a.slug, ta.role
+    FROM track_artists ta
+    JOIN artists a ON ta.artist_id = a.id
+    WHERE ta.track_id = ANY($1)
+    ORDER BY ta.track_id, ta.position ASC
+  `, [trackIds]);
+
+  const map = new Map<string, ArtistSummary[]>();
+  for (const r of rows) {
+    const list = map.get(r.track_id) || [];
+    list.push({ id: r.id, name: r.name, slug: r.slug, role: r.role || 'primary' });
+    map.set(r.track_id, list);
+  }
+  return map;
+}
+
+/** Set the artists for a track (replaces all existing links) */
+async function setTrackArtists(trackId: string, artistIds: string[], client?: any): Promise<void> {
+  const pool = client || getPool();
+  await pool.query('DELETE FROM track_artists WHERE track_id = $1', [trackId]);
+  for (let i = 0; i < artistIds.length; i++) {
+    await pool.query(
+      `INSERT INTO track_artists (track_id, artist_id, role, position) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (track_id, artist_id) DO UPDATE SET position = $4`,
+      [trackId, artistIds[i], i === 0 ? 'primary' : 'featured', i]
+    );
+  }
+}
+
+/** Get album details for a track (name + slug) */
+async function getTrackAlbumInfo(albumId: string | null): Promise<{ albumName: string | null; albumSlug: string | null }> {
+  if (!albumId) return { albumName: null, albumSlug: null };
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT title, slug FROM albums WHERE id = $1', [albumId]);
+  if (rows.length === 0) return { albumName: null, albumSlug: null };
+  return { albumName: rows[0].title, albumSlug: rows[0].slug };
+}
+
+/** Get album info for multiple tracks in a single query (batch) */
+async function getTrackAlbumInfoBatch(albumIds: string[]): Promise<Map<string, { albumName: string; albumSlug: string }>> {
+  const uniqueIds = [...new Set(albumIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map();
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT id, title, slug FROM albums WHERE id = ANY($1)', [uniqueIds]);
+  const map = new Map<string, { albumName: string; albumSlug: string }>();
+  for (const r of rows) {
+    map.set(r.id, { albumName: r.title, albumSlug: r.slug });
+  }
+  return map;
+}
+
+/** Populate a track with artists + album info */
+async function populateTrack(track: Track): Promise<Track> {
+  const [artists, albumInfo] = await Promise.all([
+    getTrackArtists(track.id),
+    getTrackAlbumInfo(track.albumId),
+  ]);
+  return { ...track, artists, ...albumInfo };
+}
+
+/** Populate multiple tracks with artists + album info (batch) */
+async function populateTracks(tracks: Track[]): Promise<Track[]> {
+  if (tracks.length === 0) return [];
+  const trackIds = tracks.map(t => t.id);
+  const albumIds = tracks.map(t => t.albumId).filter(Boolean) as string[];
+
+  const [artistsMap, albumsMap] = await Promise.all([
+    getTrackArtistsBatch(trackIds),
+    getTrackAlbumInfoBatch(albumIds),
+  ]);
+
+  return tracks.map(t => ({
+    ...t,
+    artists: artistsMap.get(t.id) || [],
+    albumName: t.albumId ? albumsMap.get(t.albumId)?.albumName || null : null,
+    albumSlug: t.albumId ? albumsMap.get(t.albumId)?.albumSlug || null : null,
+  }));
+}
+
 function rowToPlaylist(row: any, trackIds: string[]): Playlist {
   return {
     id: row.id,
@@ -122,7 +228,8 @@ const SORT_FIELD_MAP: Record<SortableTrackField, string> = {
 export async function getAllTracks(): Promise<Track[]> {
   const pool = getPool();
   const { rows } = await pool.query('SELECT * FROM tracks ORDER BY created_at DESC');
-  return rows.map(rowToTrack);
+  const tracks = rows.map(rowToTrack);
+  return populateTracks(tracks);
 }
 
 export async function getTracksPaginated(params: PaginationParams): Promise<PaginatedResponse<Track>> {
@@ -160,8 +267,10 @@ export async function getTracksPaginated(params: PaginationParams): Promise<Pagi
     [...values, params.pageSize, offset]
   );
 
+  const tracks = await populateTracks(dataResult.rows.map(rowToTrack));
+
   return {
-    data: dataResult.rows.map(rowToTrack),
+    data: tracks,
     total,
     page,
     pageSize: params.pageSize,
@@ -204,11 +313,12 @@ export async function getTracksNeedingEnrichment(limit: number, now: number): Pr
 /** Lookup by UUID or slug */
 export async function getTrack(idOrSlug: string): Promise<Track | undefined> {
   const pool = getPool();
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
-  const { rows } = isUuid
+  const isUuidVal = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+  const { rows } = isUuidVal
     ? await pool.query('SELECT * FROM tracks WHERE id = $1', [idOrSlug])
     : await pool.query('SELECT * FROM tracks WHERE slug = $1', [idOrSlug]);
-  return rows.length > 0 ? rowToTrack(rows[0]) : undefined;
+  if (rows.length === 0) return undefined;
+  return populateTrack(rowToTrack(rows[0]));
 }
 
 export async function createTrack(input: CreateTrackInput): Promise<Track> {
@@ -219,9 +329,22 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
   const artist = input.artist || 'Unknown Artist';
   const slug = await generateUniqueSlug(pool, 'tracks', trackSlug(artist, title));
 
+  // Auto-link artist by name if no artistIds provided
+  let artistIds = input.artistIds;
+  let primaryArtistId: string | null = null;
+  if ((!artistIds || artistIds.length === 0) && artist !== 'Unknown Artist') {
+    try {
+      const ar = await findOrCreateArtist(artist);
+      primaryArtistId = ar.id;
+      artistIds = [ar.id];
+    } catch { /* non-critical */ }
+  } else if (artistIds && artistIds.length > 0) {
+    primaryArtistId = artistIds[0];
+  }
+
   const { rows } = await pool.query(`
-    INSERT INTO tracks (id, slug, youtube_url, title, artist, start_time_sec, end_time_sec, volume, notes, created_at, updated_at, audio_status, enrichment_status, enrichment_attempts, field_confidences)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, 'pending', 'none', 0, '[]'::jsonb)
+    INSERT INTO tracks (id, slug, youtube_url, title, artist, artist_id, start_time_sec, end_time_sec, volume, notes, created_at, updated_at, audio_status, enrichment_status, enrichment_attempts, field_confidences)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, 'pending', 'none', 0, '[]'::jsonb)
     RETURNING *
   `, [
     id,
@@ -229,6 +352,7 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
     input.youtubeUrl,
     title,
     artist,
+    primaryArtistId,
     input.startTimeSec ?? null,
     input.endTimeSec ?? null,
     input.volume ?? 100,
@@ -236,7 +360,12 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
     now,
   ]);
 
-  return rowToTrack(rows[0]);
+  // Create track_artists join records
+  if (artistIds && artistIds.length > 0) {
+    await setTrackArtists(id, artistIds);
+  }
+
+  return populateTrack(rowToTrack(rows[0]));
 }
 
 export async function updateTrack(id: string, input: UpdateTrackInput): Promise<Track | null> {
@@ -254,6 +383,7 @@ export async function updateTrack(id: string, input: UpdateTrackInput): Promise<
     ['volume', 'volume'],
     ['notes', 'notes'],
     ['album', 'album'],
+    ['albumId', 'album_id'],
     ['releaseYear', 'release_year'],
     ['genre', 'genre'],
     ['label', 'label'],
@@ -267,18 +397,60 @@ export async function updateTrack(id: string, input: UpdateTrackInput): Promise<
     }
   }
 
-  if (sets.length === 0) {
+  // Update artist_id to first of artistIds if provided
+  if (input.artistIds !== undefined && input.artistIds.length > 0) {
+    sets.push(`artist_id = $${paramIdx}`);
+    values.push(input.artistIds[0]);
+    paramIdx++;
+  }
+
+  if (sets.length === 0 && !input.artistIds) {
     const t = await getTrack(id);
     return t || null;
   }
 
-  values.push(id);
-  const { rows } = await pool.query(
-    `UPDATE tracks SET ${sets.join(', ')} WHERE id = $${paramIdx} RETURNING *`,
-    values
-  );
+  let track: Track;
+  if (sets.length > 0) {
+    values.push(id);
+    const { rows } = await pool.query(
+      `UPDATE tracks SET ${sets.join(', ')} WHERE id = $${paramIdx} RETURNING *`,
+      values
+    );
+    if (rows.length === 0) return null;
+    track = rowToTrack(rows[0]);
+  } else {
+    const existing = await getTrack(id);
+    if (!existing) return null;
+    track = existing;
+  }
 
-  return rows.length > 0 ? rowToTrack(rows[0]) : null;
+  // Update track_artists join table if artistIds provided
+  if (input.artistIds !== undefined) {
+    await setTrackArtists(id, input.artistIds);
+  }
+
+  return populateTrack(track);
+}
+
+/** Get all tracks for a given artist (via track_artists join or legacy artist_id) */
+export async function getTracksByArtist(artistId: string): Promise<Track[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT DISTINCT t.* FROM tracks t
+    LEFT JOIN track_artists ta ON ta.track_id = t.id
+    WHERE ta.artist_id = $1 OR t.artist_id = $1
+    ORDER BY t.created_at DESC
+  `, [artistId]);
+  return populateTracks(rows.map(rowToTrack));
+}
+
+/** Get all tracks for a given album */
+export async function getTracksByAlbum(albumId: string): Promise<Track[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT * FROM tracks WHERE album_id = $1 ORDER BY created_at DESC
+  `, [albumId]);
+  return populateTracks(rows.map(rowToTrack));
 }
 
 export async function updateTrackAudio(

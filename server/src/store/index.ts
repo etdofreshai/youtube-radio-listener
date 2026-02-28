@@ -76,6 +76,16 @@ export function deleteTrack(id: string) {
   return usePostgres ? pgStore.deleteTrack(id) : wrap(memStore.deleteTrack(id));
 }
 
+export function getTracksByArtist(artistId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getTracksByArtist(artistId);
+}
+
+export function getTracksByAlbum(albumId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getTracksByAlbum(albumId);
+}
+
 // ============================================================
 // Playlists
 // ============================================================
