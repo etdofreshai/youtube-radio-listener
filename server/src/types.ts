@@ -341,12 +341,27 @@ export interface SearchLearningResourcesResult {
   resources: LearningResourceGrouped;
 }
 
-// ---------- Favorite ----------
+// ---------- Favorite (legacy) ----------
 
 export interface Favorite {
   id: string;
   trackId: string;
   likedAt: string;
+}
+
+// ---------- User Favorite (polymorphic) ----------
+
+export type FavoriteType = 'track' | 'artist' | 'album' | 'radio_station' | 'playlist';
+
+export interface UserFavorite {
+  id: string;
+  userId: string;
+  favoriteType: FavoriteType;
+  entityId: string;
+  addedAt: string;
+  // Denormalized entity info (populated in API responses)
+  entityName?: string;
+  entityMeta?: Record<string, any>;
 }
 
 // ---------- Radio Stations ----------

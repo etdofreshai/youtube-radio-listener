@@ -5,6 +5,7 @@ import type { LoopMode } from '../components/AudioPlayer';
 import { getVideoUrl, downloadVideo as apiDownloadVideo, getTrack } from '../api';
 import { usePlaybackSync } from '../hooks/usePlaybackSync';
 import TrackMenu from '../components/TrackMenu';
+import FavoriteButton from '../components/FavoriteButton';
 import type { Track } from '../types';
 
 export type MediaMode = 'video' | 'artwork' | 'lyrics';
@@ -302,6 +303,7 @@ export default function NowPlayingPage() {
                 {track.isLiveStream && <span className="badge-live badge-live-lg" title="Live Stream">LIVE</span>}
                 {track.title}
               </h1>
+              <FavoriteButton type="track" entityId={track.id} size="lg" />
               <TrackMenu
                 trackId={track.id}
                 trackTitle={track.title}

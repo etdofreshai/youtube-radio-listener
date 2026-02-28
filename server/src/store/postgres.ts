@@ -19,6 +19,7 @@ import type {
   SortableTrackField, SortDirection,
   LearningResource, CreateLearningResourceInput,
   RadioStation, CreateRadioStationInput, UpdateRadioStationInput,
+  UserFavorite, FavoriteType,
 } from '../types';
 import { trackSlug, artistSlug, albumSlug, slugify } from '../utils/slug';
 
@@ -2423,4 +2424,159 @@ export async function upsertPlaybackState(userId: string, update: UpdatePlayback
   `, vals);
 
   return rowToPlaybackState(rows[0]);
+}
+
+// ============================================================
+// User Favorites (polymorphic)
+// ============================================================
+
+function rowToUserFavorite(row: any): UserFavorite {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    favoriteType: row.favorite_type as FavoriteType,
+    entityId: row.entity_id,
+    addedAt: row.added_at instanceof Date ? row.added_at.toISOString() : row.added_at,
+  };
+}
+
+/** Helper: resolve entity name + metadata for a user favorite */
+async function enrichUserFavorite(fav: UserFavorite): Promise<UserFavorite> {
+  const pool = getPool();
+  let entityName: string | undefined;
+  let entityMeta: Record<string, any> | undefined;
+
+  switch (fav.favoriteType) {
+    case 'track': {
+      const { rows } = await pool.query('SELECT title, artist, yt_thumbnail_url, artwork_url, slug FROM tracks WHERE id = $1', [fav.entityId]);
+      if (rows[0]) {
+        entityName = rows[0].title;
+        entityMeta = { artist: rows[0].artist, thumbnailUrl: rows[0].yt_thumbnail_url || rows[0].artwork_url, slug: rows[0].slug };
+      }
+      break;
+    }
+    case 'artist': {
+      const { rows } = await pool.query('SELECT name, slug, image_url FROM artists WHERE id = $1', [fav.entityId]);
+      if (rows[0]) {
+        entityName = rows[0].name;
+        entityMeta = { slug: rows[0].slug, imageUrl: rows[0].image_url };
+      }
+      break;
+    }
+    case 'album': {
+      const { rows } = await pool.query(`
+        SELECT al.title, al.slug, al.artwork_url, ar.name as artist_name
+        FROM albums al LEFT JOIN artists ar ON al.artist_id = ar.id
+        WHERE al.id = $1
+      `, [fav.entityId]);
+      if (rows[0]) {
+        entityName = rows[0].title;
+        entityMeta = { slug: rows[0].slug, artworkUrl: rows[0].artwork_url, artistName: rows[0].artist_name };
+      }
+      break;
+    }
+    case 'radio_station': {
+      const { rows } = await pool.query('SELECT name, slug, image_url FROM radio_stations WHERE id = $1', [fav.entityId]);
+      if (rows[0]) {
+        entityName = rows[0].name;
+        entityMeta = { slug: rows[0].slug, imageUrl: rows[0].image_url };
+      }
+      break;
+    }
+    case 'playlist': {
+      const { rows } = await pool.query('SELECT name, slug FROM playlists WHERE id = $1', [fav.entityId]);
+      if (rows[0]) {
+        entityName = rows[0].name;
+        entityMeta = { slug: rows[0].slug };
+      }
+      break;
+    }
+  }
+
+  return { ...fav, entityName, entityMeta };
+}
+
+/** Get all user favorites (optionally filtered by type), enriched with entity names */
+export async function getUserFavorites(userId: string, type?: FavoriteType): Promise<UserFavorite[]> {
+  const pool = getPool();
+  let query = 'SELECT * FROM user_favorites WHERE user_id = $1';
+  const params: any[] = [userId];
+
+  if (type) {
+    query += ' AND favorite_type = $2';
+    params.push(type);
+  }
+
+  query += ' ORDER BY added_at DESC';
+
+  const { rows } = await pool.query(query, params);
+  const favs = rows.map(rowToUserFavorite);
+
+  // Enrich with entity metadata
+  return Promise.all(favs.map(enrichUserFavorite));
+}
+
+/** Add a user favorite */
+export async function addUserFavorite(userId: string, favoriteType: FavoriteType, entityId: string): Promise<UserFavorite> {
+  const pool = getPool();
+
+  // Check if already exists
+  const { rows: existing } = await pool.query(
+    'SELECT * FROM user_favorites WHERE user_id = $1 AND favorite_type = $2 AND entity_id = $3',
+    [userId, favoriteType, entityId]
+  );
+  if (existing.length > 0) {
+    return enrichUserFavorite(rowToUserFavorite(existing[0]));
+  }
+
+  const id = uuidv4();
+  const { rows } = await pool.query(
+    `INSERT INTO user_favorites (id, user_id, favorite_type, entity_id)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [id, userId, favoriteType, entityId]
+  );
+
+  return enrichUserFavorite(rowToUserFavorite(rows[0]));
+}
+
+/** Remove a user favorite */
+export async function removeUserFavorite(userId: string, favoriteType: FavoriteType, entityId: string): Promise<boolean> {
+  const pool = getPool();
+  const { rowCount } = await pool.query(
+    'DELETE FROM user_favorites WHERE user_id = $1 AND favorite_type = $2 AND entity_id = $3',
+    [userId, favoriteType, entityId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Check if a specific entity is favorited by a user */
+export async function isUserFavorite(userId: string, favoriteType: FavoriteType, entityId: string): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    'SELECT 1 FROM user_favorites WHERE user_id = $1 AND favorite_type = $2 AND entity_id = $3',
+    [userId, favoriteType, entityId]
+  );
+  return rows.length > 0;
+}
+
+/** Batch check: which entity IDs from a list are favorited? Returns set of favorited entity IDs. */
+export async function checkUserFavoritesBatch(userId: string, favoriteType: FavoriteType, entityIds: string[]): Promise<Set<string>> {
+  if (entityIds.length === 0) return new Set();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    'SELECT entity_id FROM user_favorites WHERE user_id = $1 AND favorite_type = $2 AND entity_id = ANY($3)',
+    [userId, favoriteType, entityIds]
+  );
+  return new Set(rows.map((r: any) => r.entity_id));
+}
+
+/** Get all favorited entity IDs for a user (for client-side caching) */
+export async function getAllUserFavoriteIds(userId: string): Promise<Array<{ favoriteType: FavoriteType; entityId: string }>> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    'SELECT favorite_type, entity_id FROM user_favorites WHERE user_id = $1',
+    [userId]
+  );
+  return rows.map((r: any) => ({ favoriteType: r.favorite_type as FavoriteType, entityId: r.entity_id }));
 }

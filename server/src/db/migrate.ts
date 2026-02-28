@@ -510,6 +510,46 @@ CREATE TRIGGER update_playback_state_updated_at
   BEFORE UPDATE ON playback_state
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================
+-- v13: Polymorphic User Favorites
+-- ============================================================
+
+DO $$ BEGIN
+  CREATE TYPE favorite_type AS ENUM ('track', 'artist', 'album', 'radio_station', 'playlist');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS user_favorites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  favorite_type favorite_type NOT NULL,
+  entity_id UUID NOT NULL,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, favorite_type, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_favorites_user ON user_favorites(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_favorites_user_type ON user_favorites(user_id, favorite_type);
+CREATE INDEX IF NOT EXISTS idx_user_favorites_entity ON user_favorites(favorite_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_user_favorites_added ON user_favorites(user_id, added_at DESC);
+`;
+
+/**
+ * Backfill: migrate legacy favorites → user_favorites (track type).
+ * Assigns legacy favorites to the default local user.
+ * Idempotent — uses ON CONFLICT DO NOTHING.
+ */
+const BACKFILL_USER_FAVORITES = `
+INSERT INTO user_favorites (user_id, favorite_type, entity_id, added_at)
+SELECT
+  '00000000-0000-0000-0000-000000000001',
+  'track'::favorite_type,
+  f.track_id,
+  f.liked_at
+FROM favorites f
+ON CONFLICT (user_id, favorite_type, entity_id) DO NOTHING;
 `;
 
 /**
@@ -609,6 +649,8 @@ export async function ensureSchema(): Promise<boolean> {
   const pool = getPool();
   try {
     await pool.query(SCHEMA_DDL);
+    // Backfill legacy favorites → user_favorites
+    await pool.query(BACKFILL_USER_FAVORITES);
     // Backfill variants for existing tracks
     await pool.query(BACKFILL_VARIANTS);
     // Backfill conservative high-confidence link groups

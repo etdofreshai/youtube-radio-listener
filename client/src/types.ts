@@ -392,6 +392,25 @@ export interface Favorite {
   track?: Track | null;
 }
 
+// ---------- User Favorite (polymorphic) ----------
+
+export type FavoriteType = 'track' | 'artist' | 'album' | 'radio_station' | 'playlist';
+
+export interface UserFavorite {
+  id: string;
+  userId: string;
+  favoriteType: FavoriteType;
+  entityId: string;
+  addedAt: string;
+  entityName?: string;
+  entityMeta?: Record<string, any>;
+}
+
+export interface FavoriteIdEntry {
+  favoriteType: FavoriteType;
+  entityId: string;
+}
+
 // ---------- YouTube Search ----------
 
 export interface YouTubeSearchResultItem {

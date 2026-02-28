@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Playlist, CreatePlaylistInput } from '../types';
 import * as api from '../api';
+import FavoriteButton from '../components/FavoriteButton';
 
 export default function PlaylistsPage() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -89,7 +90,10 @@ export default function PlaylistsPage() {
               onClick={() => navigate(`/playlists/${p.id}`)}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
-                <h3 style={{ margin: 0 }}>{p.name}</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <h3 style={{ margin: 0 }}>{p.name}</h3>
+                  <FavoriteButton type="playlist" entityId={p.id} size="sm" />
+                </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   {p.isPublic && (
                     <span title="Public playlist" style={{

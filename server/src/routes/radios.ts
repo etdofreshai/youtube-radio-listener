@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Readable } from 'stream';
 import * as store from '../store';
 import type { CreateRadioStationInput, UpdateRadioStationInput } from '../types';
 
@@ -71,6 +72,77 @@ router.get('/', async (req, res) => {
   const includeInactive = req.query.all === 'true';
   const stations = await store.getAllRadioStations(includeInactive);
   res.json(stations);
+});
+
+// GET /api/radios/:idOrSlug/stream — server-side proxy to bypass CORS restrictions on radio streams.
+// The browser's Web Audio API (createMediaElementSource) requires CORS headers on the audio source,
+// but most radio streams (e.g. Rainwave/Icecast) don't set Access-Control-Allow-Origin.
+// Proxying through our server solves this: the audio URL is same-origin, and the Express cors()
+// middleware adds the required CORS headers automatically.
+router.get('/:idOrSlug/stream', async (req, res) => {
+  const idOrSlug = paramId(req.params.idOrSlug);
+  const station = await store.getRadioStation(idOrSlug);
+  if (!station) { res.status(404).json({ error: 'Radio station not found' }); return; }
+
+  // Resolve M3U/playlist URLs to the actual stream URL server-side
+  const resolved = await resolveStreamUrl(station.streamUrl);
+  const streamUrl = resolved.streamUrl;
+
+  try {
+    // Headers that Icecast/Shoutcast streams typically expect
+    const upstreamHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (compatible; Nightwave/1.0)',
+      'Icy-MetaData': '0',
+      'Accept': 'audio/*,*/*;q=0.9',
+      'Connection': 'keep-alive',
+    };
+
+    // Forward Range header if present (supports seeking where available)
+    if (req.headers['range']) {
+      upstreamHeaders['Range'] = req.headers['range'] as string;
+    }
+
+    const upstream = await fetch(streamUrl, { headers: upstreamHeaders });
+
+    if (!upstream.ok && upstream.status !== 206) {
+      res.status(502).json({ error: 'Radio stream unavailable', streamUrl });
+      return;
+    }
+
+    // Propagate HTTP status (200 or 206 for range requests)
+    res.status(upstream.status);
+
+    // Forward useful audio/stream headers from upstream
+    for (const [key, value] of upstream.headers) {
+      const lk = key.toLowerCase();
+      if ([
+        'content-type', 'content-length', 'content-range',
+        'accept-ranges', 'icy-name', 'icy-genre', 'icy-br', 'icy-url',
+      ].includes(lk)) {
+        res.set(key, value);
+      }
+    }
+
+    // Default to audio/mpeg if upstream doesn't provide content-type
+    if (!res.getHeader('content-type')) {
+      res.set('content-type', 'audio/mpeg');
+    }
+
+    // Pipe the stream; clean up on client disconnect
+    if (upstream.body) {
+      const nodeStream = Readable.fromWeb(upstream.body as never);
+      nodeStream.pipe(res);
+      req.on('close', () => nodeStream.destroy());
+    } else {
+      res.end();
+    }
+  } catch (err: any) {
+    if (!res.headersSent) {
+      const msg = err?.message || 'Stream proxy failed';
+      console.error(`[radios] stream proxy error for "${station.name}":`, msg);
+      res.status(500).json({ error: 'Failed to proxy radio stream', detail: msg });
+    }
+  }
 });
 
 // GET /api/radios/:idOrSlug — get a single station

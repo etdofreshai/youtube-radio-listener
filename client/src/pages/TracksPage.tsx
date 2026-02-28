@@ -5,6 +5,7 @@ import * as api from '../api';
 import TrackForm from '../components/TrackForm';
 import YouTubeSearch from '../components/YouTubeSearch';
 import LearnPanel from '../components/LearnPanel';
+import FavoriteButton from '../components/FavoriteButton';
 import { useAudioPlayer } from '../components/AudioPlayer';
 import { parseEndTime } from '../utils/endTimeParse';
 import { getEffectiveDuration, getEffectiveDurationFromStrings } from '../utils/effectiveDuration';
@@ -1143,8 +1144,9 @@ export default function TracksPage() {
                   })()}
                 </div>
 
-                {/* Actions — compact ⋯ menu */}
-                <div className="col-actions">
+                {/* Actions — favorite + compact ⋯ menu */}
+                <div className="col-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
+                  <FavoriteButton type="track" entityId={t.id} size="sm" />
                   <ActionMenu
                     track={t}
                     isEnriching={enrichingIds.has(t.id) || t.enrichmentStatus === 'stage_a' || t.enrichmentStatus === 'stage_b' || t.enrichmentStatus === 'queued'}

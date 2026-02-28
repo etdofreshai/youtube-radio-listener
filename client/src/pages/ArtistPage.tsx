@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import type { Artist, Track } from '../types';
 import * as api from '../api';
 import { useAudioPlayer } from '../components/AudioPlayer';
+import FavoriteButton from '../components/FavoriteButton';
 
 export default function ArtistPage() {
   const { idOrSlug } = useParams<{ idOrSlug: string }>();
@@ -50,7 +51,10 @@ export default function ArtistPage() {
               style={{ width: 80, height: 80, borderRadius: 'var(--radius)', objectFit: 'cover' }} />
           )}
           <div>
-            <h1>{artist.name}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <h1>{artist.name}</h1>
+              <FavoriteButton type="artist" entityId={artist.id} size="lg" />
+            </div>
             {artist.bio && <p style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{artist.bio}</p>}
           </div>
         </div>

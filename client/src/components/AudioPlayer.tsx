@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import type { Track, RadioStation } from '../types';
-import { getPlaybackUrl, resolveRadioStream } from '../api';
+import { getPlaybackUrl, getRadioProxyUrl } from '../api';
 
 export type LoopMode = 'off' | 'all' | 'one';
 
@@ -144,15 +144,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setRadioLoading(true);
     setRadioError(null);
 
+    // Use the server-side proxy URL instead of the raw stream URL.
+    // Rainwave (and most Icecast/Shoutcast stations) don't send CORS headers,
+    // which causes the Web Audio API's createMediaElementSource to output silence.
+    // The proxy endpoint resolves M3U playlists and adds CORS headers server-side.
+    const proxyUrl = getRadioProxyUrl(station.id);
+
     try {
-      // Resolve M3U/playlist URLs to actual stream URLs via server
-      const resolved = await resolveRadioStream(station.id);
-      if (resolved.error) {
-        console.warn('Stream resolve warning:', resolved.error);
-      }
-
-      const streamUrl = resolved.streamUrl;
-
       // Set up error handler before setting src
       const errorHandler = () => {
         const mediaError = audio.error;
@@ -181,7 +179,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       audio.addEventListener('error', errorHandler, { once: true });
       audio.addEventListener('playing', playingHandler, { once: true });
 
-      audio.src = streamUrl;
+      // Proxy URL is same-origin — no crossOrigin attribute needed; Web Audio API
+      // can process the stream without CORS restrictions.
+      audio.src = proxyUrl;
+
       // Reset to current volume for radio; respect mute
       if (gainRef.current) {
         gainRef.current.gain.value = isMuted ? 0 : volume / 100;

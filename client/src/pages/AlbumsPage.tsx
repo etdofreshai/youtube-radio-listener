@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Album } from '../types';
 import * as api from '../api';
+import FavoriteButton from '../components/FavoriteButton';
 
 export default function AlbumsPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -36,7 +37,12 @@ export default function AlbumsPage() {
               ) : (
                 <div className="entity-card-placeholder">💿</div>
               )}
-              <div className="entity-card-name">{a.title}</div>
+              <div className="entity-card-name" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', justifyContent: 'center' }}>
+                {a.title}
+                <span onClick={e => e.preventDefault()}>
+                  <FavoriteButton type="album" entityId={a.id} size="sm" />
+                </span>
+              </div>
               {a.artistName && <div className="entity-card-sub">{a.artistName}</div>}
             </Link>
           ))}

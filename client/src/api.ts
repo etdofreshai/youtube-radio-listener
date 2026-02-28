@@ -270,7 +270,7 @@ export const reorderPlaylistTracks = (playlistId: string, trackIds: string[]) =>
     body: JSON.stringify({ trackIds }),
   });
 
-// ---------- Favorites ----------
+// ---------- Favorites (legacy) ----------
 
 export const getFavorites = () => request<Favorite[]>('/api/favorites');
 
@@ -279,6 +279,30 @@ export const addFavorite = (trackId: string) =>
 
 export const removeFavorite = (trackId: string) =>
   request<void>(`/api/favorites/${trackId}`, { method: 'DELETE' });
+
+// ---------- User Favorites (polymorphic) ----------
+
+import type { UserFavorite, FavoriteType, FavoriteIdEntry } from './types';
+
+export const getUserFavorites = (type?: FavoriteType) => {
+  const qs = type ? `?type=${type}` : '';
+  return request<UserFavorite[]>(`/api/favorites${qs}`);
+};
+
+export const getUserFavoriteIds = () =>
+  request<FavoriteIdEntry[]>('/api/favorites/ids');
+
+export const addUserFavorite = (type: FavoriteType, entityId: string) =>
+  request<UserFavorite>('/api/favorites', {
+    method: 'POST',
+    body: JSON.stringify({ type, entityId }),
+  });
+
+export const removeUserFavorite = (type: FavoriteType, entityId: string) =>
+  request<void>(`/api/favorites/${type}/${entityId}`, { method: 'DELETE' });
+
+export const checkUserFavorite = (type: FavoriteType, id: string) =>
+  request<{ favorited: boolean }>(`/api/favorites/check?type=${type}&id=${id}`);
 
 // ---------- Events / History ----------
 
@@ -419,9 +443,20 @@ export const deleteRadioStation = (idOrSlug: string) =>
 export const toggleRadioStation = (idOrSlug: string) =>
   request<RadioStation>(`/api/radios/${encodeURIComponent(idOrSlug)}/toggle`, { method: 'POST' });
 
-/** Get direct stream URL for a radio station (passed through the browser directly) */
+/** Get direct stream URL for a radio station (passed through the browser directly).
+ *  @deprecated Prefer getRadioProxyUrl to avoid CORS issues with Web Audio API. */
 export function getRadioStreamUrl(station: RadioStation): string {
   return station.streamUrl;
+}
+
+/**
+ * Get the server-side proxy URL for a radio station stream.
+ * Use this instead of the raw streamUrl — Icecast/Shoutcast streams don't serve
+ * CORS headers, which causes the Web Audio API (createMediaElementSource) to
+ * output silence. The proxy endpoint adds CORS headers and handles M3U resolution.
+ */
+export function getRadioProxyUrl(stationId: string): string {
+  return `${BASE}/api/radios/${encodeURIComponent(stationId)}/stream`;
 }
 
 /** Resolve M3U/playlist URLs to actual stream URLs via server */

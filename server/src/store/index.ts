@@ -455,6 +455,42 @@ export function upsertPlaybackState(...args: Parameters<typeof pgStore.upsertPla
 }
 
 // ============================================================
+// User Favorites (polymorphic)
+// ============================================================
+
+import type { FavoriteType } from '../types';
+
+export function getUserFavorites(userId: string, type?: FavoriteType) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getUserFavorites(userId, type);
+}
+
+export function addUserFavorite(userId: string, favoriteType: FavoriteType, entityId: string) {
+  if (!usePostgres) throw new Error('User favorites require PostgreSQL');
+  return pgStore.addUserFavorite(userId, favoriteType, entityId);
+}
+
+export function removeUserFavorite(userId: string, favoriteType: FavoriteType, entityId: string) {
+  if (!usePostgres) throw new Error('User favorites require PostgreSQL');
+  return pgStore.removeUserFavorite(userId, favoriteType, entityId);
+}
+
+export function isUserFavorite(userId: string, favoriteType: FavoriteType, entityId: string) {
+  if (!usePostgres) return Promise.resolve(false);
+  return pgStore.isUserFavorite(userId, favoriteType, entityId);
+}
+
+export function checkUserFavoritesBatch(userId: string, favoriteType: FavoriteType, entityIds: string[]) {
+  if (!usePostgres) return Promise.resolve(new Set<string>());
+  return pgStore.checkUserFavoritesBatch(userId, favoriteType, entityIds);
+}
+
+export function getAllUserFavoriteIds(userId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getAllUserFavoriteIds(userId);
+}
+
+// ============================================================
 // Meta
 // ============================================================
 

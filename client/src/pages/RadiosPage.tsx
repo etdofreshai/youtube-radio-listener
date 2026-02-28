@@ -8,6 +8,7 @@ import {
   toggleRadioStation,
 } from '../api';
 import { useAudioPlayer } from '../components/AudioPlayer';
+import FavoriteButton from '../components/FavoriteButton';
 
 // ---------- helpers ----------
 
@@ -112,6 +113,7 @@ function StationCard({ station, isPlaying, isLoading, error, onPlay, onStop, onE
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+            <FavoriteButton type="radio_station" entityId={station.id} size="sm" />
             <LiveBadge isLive={station.isLive} />
             <span>{station.name}</span>
             {isLoading && <span style={{ fontSize: '0.75rem', color: 'var(--accent, #60a5fa)' }}>⏳ Connecting…</span>}

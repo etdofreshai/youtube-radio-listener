@@ -20,6 +20,7 @@ import PasswordGate from './components/PasswordGate';
 import UserSelector from './components/UserSelector';
 import ImpersonationBanner from './components/ImpersonationBanner';
 import { useAuth } from './context/AuthContext';
+import { FavoritesProvider } from './context/FavoritesContext';
 
 /** Sidebar "Now Playing" link — only rendered when a track/radio is active. */
 function NowPlayingNavLink({ onNavigate }: { onNavigate?: () => void }) {
@@ -69,6 +70,7 @@ function AppShell() {
 
   return (
     <AudioPlayerProvider>
+      <FavoritesProvider>
       <ImpersonationBanner />
       <div className="app-layout">
         {/* Mobile header with hamburger */}
@@ -155,6 +157,7 @@ function AppShell() {
         </main>
         <PlayerBar />
       </div>
+      </FavoritesProvider>
     </AudioPlayerProvider>
   );
 }

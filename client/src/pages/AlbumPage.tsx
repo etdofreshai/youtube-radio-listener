@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import type { Album, Track } from '../types';
 import * as api from '../api';
 import { useAudioPlayer } from '../components/AudioPlayer';
+import FavoriteButton from '../components/FavoriteButton';
 
 export default function AlbumPage() {
   const { idOrSlug } = useParams<{ idOrSlug: string }>();
@@ -50,7 +51,10 @@ export default function AlbumPage() {
               style={{ width: 100, height: 100, borderRadius: 'var(--radius)', objectFit: 'cover' }} />
           )}
           <div>
-            <h1>{album.title}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <h1>{album.title}</h1>
+              <FavoriteButton type="album" entityId={album.id} size="lg" />
+            </div>
             <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
               {album.artistName && (
                 <span>
