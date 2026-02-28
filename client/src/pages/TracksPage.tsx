@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Track, CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection, EnrichmentStatus, TrackVariant, VariantKind, CreateVariantInput } from '../types';
 import * as api from '../api';
@@ -107,6 +107,118 @@ export function swapArtistAlbum(state: RowEditState): RowEditState {
 
 export type TracksPageMode = 'regular' | 'edit';
 
+// ── Action Menu — module-level so React never unmounts/remounts it ──────────
+// Defining components inside a parent component causes React to treat them as
+// a new type on every render, forcing unmount+remount and closing any open menu.
+// By moving ActionMenu here, its identity is stable across all parent renders.
+
+interface ActionMenuProps {
+  track: Track;
+  isEnriching: boolean;
+  onEdit: (track: Track) => void;
+  onVerify: (track: Track) => void;
+  onEnrich: (id: string) => void;
+  onLearn: (id: string) => void;
+  onRefresh: (id: string) => void;
+  onDownload: (id: string) => void;
+  onDownloadVideo: (id: string) => void;
+  onDelete: (id: string) => void;
+}
+
+const ActionMenu = memo(function ActionMenu({
+  track,
+  isEnriching,
+  onEdit,
+  onVerify,
+  onEnrich,
+  onLearn,
+  onRefresh,
+  onDownload,
+  onDownloadVideo,
+  onDelete,
+}: ActionMenuProps) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const toggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(prev => !prev);
+  }, []);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open]);
+
+  return (
+    <div className="action-menu-wrap" ref={menuRef}>
+      <button
+        className={`btn-icon action-menu-trigger ${open ? 'active' : ''}`}
+        onClick={toggle}
+        title="Actions"
+        aria-label="Track actions"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div className="action-menu-dropdown" onClick={e => e.stopPropagation()}>
+          <button className="action-menu-item" onClick={() => { setOpen(false); onEdit(track); }}>
+            <span className="action-menu-icon">✏️</span> Edit
+          </button>
+          <button className="action-menu-item" onClick={() => { setOpen(false); onVerify(track); }}>
+            <span className="action-menu-icon">{track.verified ? '☑️' : '☐'}</span>
+            {track.verified ? 'Unverify' : 'Verify'}
+          </button>
+          <button className="action-menu-item" onClick={() => { setOpen(false); onEnrich(track.id); }} disabled={isEnriching}>
+            <span className="action-menu-icon">🔍</span>
+            {isEnriching ? 'Enriching…' : 'Enrich'}
+          </button>
+          <button className="action-menu-item" onClick={() => { setOpen(false); onLearn(track.id); }}>
+            <span className="action-menu-icon">🎸</span>
+            Learn
+          </button>
+          {!track.isLiveStream && track.audioStatus === 'ready' && (
+            <button className="action-menu-item" onClick={() => { setOpen(false); onRefresh(track.id); }}>
+              <span className="action-menu-icon">🔄</span> Re-download
+            </button>
+          )}
+          {!track.isLiveStream && (track.audioStatus === 'error' || track.audioStatus === 'pending') && (
+            <button className="action-menu-item" onClick={() => { setOpen(false); onDownload(track.id); }}>
+              <span className="action-menu-icon">⬇️</span> Download
+            </button>
+          )}
+          {!track.isLiveStream && track.videoStatus !== 'ready' && track.videoStatus !== 'downloading' && (
+            <button className="action-menu-item" onClick={() => { setOpen(false); onDownloadVideo(track.id); }}>
+              <span className="action-menu-icon">🎬</span> Download Video
+            </button>
+          )}
+          <div className="action-menu-divider" />
+          <button className="action-menu-item action-menu-danger" onClick={() => { setOpen(false); onDelete(track.id); }}>
+            <span className="action-menu-icon">🗑️</span> Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+});
+
 export default function TracksPage() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -116,10 +228,8 @@ export default function TracksPage() {
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [showYtSearch, setShowYtSearch] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [learnTrackId, setLearnTrackId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Mode toggle
   const [mode, setMode] = useState<TracksPageMode>('regular');
@@ -185,18 +295,6 @@ export default function TracksPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [tracks, load]);
 
-  // Close action menu on outside click
-  useEffect(() => {
-    if (!openMenuId) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [openMenuId]);
-
   // Handlers
   const handleCreate = async (data: CreateTrackInput) => {
     await api.createTrack(data);
@@ -217,38 +315,45 @@ export default function TracksPage() {
     load();
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     if (!confirm('Delete this track?')) return;
     await api.deleteTrack(id);
-    setOpenMenuId(null);
     load();
-  };
+  }, [load]);
 
   const handlePlay = (track: Track) => {
     if (currentTrack?.id === track.id && isPlaying) pause();
     else play(track);
   };
 
-  const handleRefresh = async (id: string) => { await api.refreshTrack(id); setOpenMenuId(null); load(); };
-  const handleDownload = async (id: string) => { await api.downloadTrack(id); setOpenMenuId(null); load(); };
-  const handleDownloadVideo = async (id: string) => { await api.downloadVideo(id); setOpenMenuId(null); load(); };
+  const handleRefresh = useCallback(async (id: string) => { await api.refreshTrack(id); load(); }, [load]);
+  const handleDownload = useCallback(async (id: string) => { await api.downloadTrack(id); load(); }, [load]);
+  const handleDownloadVideo = useCallback(async (id: string) => { await api.downloadVideo(id); load(); }, [load]);
 
-  const handleVerify = async (track: Track) => {
+  const handleVerify = useCallback(async (track: Track) => {
     await api.verifyTrack(track.id, !track.verified);
-    setOpenMenuId(null);
     load();
-  };
+  }, [load]);
 
-  const handleEnrich = async (id: string) => {
+  const handleEnrich = useCallback(async (id: string) => {
     setEnrichingIds(prev => new Set(prev).add(id));
-    setOpenMenuId(null);
     try {
       await api.enrichTrack(id);
       load();
     } finally {
       setEnrichingIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     }
-  };
+  }, [load]);
+
+  // Stable callbacks for ActionMenu — prevent prop changes from causing re-renders
+  const handleMenuEdit = useCallback((track: Track) => {
+    setEditing(track);
+    setShowForm(true);
+  }, []);
+
+  const handleMenuLearn = useCallback((id: string) => {
+    setLearnTrackId(id);
+  }, []);
 
   const handleSort = (field: SortableTrackField) => {
     if (sortBy === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -424,64 +529,6 @@ export default function TracksPage() {
           <span key={i} className={`confidence-dot ${i <= level ? 'filled' : ''}`} />
         ))}
       </span>
-    );
-  }
-
-  // ---------- Action Menu ----------
-  function ActionMenu({ track }: { track: Track }) {
-    const isOpen = openMenuId === track.id;
-    const isEnriching = enrichingIds.has(track.id) ||
-      track.enrichmentStatus === 'stage_a' || track.enrichmentStatus === 'stage_b' || track.enrichmentStatus === 'queued';
-
-    return (
-      <div className="action-menu-wrap" ref={isOpen ? menuRef : undefined}>
-        <button
-          className={`btn-icon action-menu-trigger ${isOpen ? 'active' : ''}`}
-          onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : track.id); }}
-          title="Actions"
-          aria-label="Track actions"
-        >
-          ⋯
-        </button>
-        {isOpen && (
-          <div className="action-menu-dropdown" onClick={e => e.stopPropagation()}>
-            <button className="action-menu-item" onClick={() => { setEditing(track); setShowForm(true); setOpenMenuId(null); }}>
-              <span className="action-menu-icon">✏️</span> Edit
-            </button>
-            <button className="action-menu-item" onClick={() => handleVerify(track)}>
-              <span className="action-menu-icon">{track.verified ? '☑️' : '☐'}</span>
-              {track.verified ? 'Unverify' : 'Verify'}
-            </button>
-            <button className="action-menu-item" onClick={() => handleEnrich(track.id)} disabled={isEnriching}>
-              <span className="action-menu-icon">🔍</span>
-              {isEnriching ? 'Enriching…' : 'Enrich'}
-            </button>
-            <button className="action-menu-item" onClick={() => { setLearnTrackId(track.id); setOpenMenuId(null); }}>
-              <span className="action-menu-icon">🎸</span>
-              Learn
-            </button>
-            {!track.isLiveStream && track.audioStatus === 'ready' && (
-              <button className="action-menu-item" onClick={() => handleRefresh(track.id)}>
-                <span className="action-menu-icon">🔄</span> Re-download
-              </button>
-            )}
-            {!track.isLiveStream && (track.audioStatus === 'error' || track.audioStatus === 'pending') && (
-              <button className="action-menu-item" onClick={() => handleDownload(track.id)}>
-                <span className="action-menu-icon">⬇️</span> Download
-              </button>
-            )}
-            {!track.isLiveStream && track.videoStatus !== 'ready' && track.videoStatus !== 'downloading' && (
-              <button className="action-menu-item" onClick={() => handleDownloadVideo(track.id)}>
-                <span className="action-menu-icon">🎬</span> Download Video
-              </button>
-            )}
-            <div className="action-menu-divider" />
-            <button className="action-menu-item action-menu-danger" onClick={() => handleDelete(track.id)}>
-              <span className="action-menu-icon">🗑️</span> Delete
-            </button>
-          </div>
-        )}
-      </div>
     );
   }
 
@@ -1098,7 +1145,18 @@ export default function TracksPage() {
 
                 {/* Actions — compact ⋯ menu */}
                 <div className="col-actions">
-                  <ActionMenu track={t} />
+                  <ActionMenu
+                    track={t}
+                    isEnriching={enrichingIds.has(t.id) || t.enrichmentStatus === 'stage_a' || t.enrichmentStatus === 'stage_b' || t.enrichmentStatus === 'queued'}
+                    onEdit={handleMenuEdit}
+                    onVerify={handleVerify}
+                    onEnrich={handleEnrich}
+                    onLearn={handleMenuLearn}
+                    onRefresh={handleRefresh}
+                    onDownload={handleDownload}
+                    onDownloadVideo={handleDownloadVideo}
+                    onDelete={handleDelete}
+                  />
                 </div>
               </div>
 
