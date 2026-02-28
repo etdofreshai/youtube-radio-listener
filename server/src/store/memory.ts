@@ -1,8 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import type {
-  Track, Playlist, Favorite,
+  Track, Playlist, Favorite, User,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
+  CreateUserInput, UpdateUserInput,
   AudioStatus, VideoStatus, EnrichmentStatus, FieldConfidence,
   PaginationParams, PaginatedResponse,
   SortableTrackField, SortDirection,
@@ -13,6 +14,58 @@ import type {
 const tracks = new Map<string, Track>();
 const playlists = new Map<string, Playlist>();
 const favorites = new Map<string, Favorite>(); // keyed by favorite id
+const users = new Map<string, User>();
+
+const LOCAL_USER_ID = '00000000-0000-0000-0000-000000000001';
+const PROTECTED_USER_ID = '00000000-0000-0000-0000-000000000002';
+const PROTECTED_USERNAME = 'etdoefresh';
+
+function seedUsers() {
+  const now = new Date().toISOString();
+
+  users.set(LOCAL_USER_ID, {
+    id: LOCAL_USER_ID,
+    username: 'local',
+    displayName: 'Local User',
+    role: 'admin',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  users.set(PROTECTED_USER_ID, {
+    id: PROTECTED_USER_ID,
+    username: PROTECTED_USERNAME,
+    displayName: 'ET',
+    role: 'admin',
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+seedUsers();
+
+function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase();
+}
+
+function isProtectedUser(user: User): boolean {
+  return normalizeUsername(user.username) === PROTECTED_USERNAME;
+}
+
+function ensureProtectedUserExists(): void {
+  const existing = Array.from(users.values()).find(u => normalizeUsername(u.username) === PROTECTED_USERNAME);
+  if (existing) return;
+
+  const now = new Date().toISOString();
+  users.set(PROTECTED_USER_ID, {
+    id: PROTECTED_USER_ID,
+    username: PROTECTED_USERNAME,
+    displayName: 'ET',
+    role: 'admin',
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 // ---------- Default metadata fields ----------
 
@@ -478,4 +531,94 @@ export function isFavorite(trackId: string): boolean {
     if (fav.trackId === trackId) return true;
   }
   return false;
+}
+
+// ---------- Users ----------
+
+export function getAllUsers(): User[] {
+  ensureProtectedUserExists();
+  return Array.from(users.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+}
+
+export function getUser(id: string): User | undefined {
+  ensureProtectedUserExists();
+  return users.get(id);
+}
+
+export function createUser(input: CreateUserInput): User {
+  ensureProtectedUserExists();
+
+  const username = normalizeUsername(input.username);
+  if (!username) {
+    throw new Error('username is required');
+  }
+
+  const duplicate = Array.from(users.values()).find(u => normalizeUsername(u.username) === username);
+  if (duplicate) {
+    throw new Error('username already exists');
+  }
+
+  const now = new Date().toISOString();
+  const user: User = {
+    id: uuidv4(),
+    username,
+    displayName: input.displayName ?? null,
+    role: 'user',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  users.set(user.id, user);
+  return user;
+}
+
+export function updateUser(id: string, input: UpdateUserInput): User | null {
+  ensureProtectedUserExists();
+
+  const existing = users.get(id);
+  if (!existing) return null;
+
+  const nextUsername = input.username !== undefined
+    ? normalizeUsername(input.username)
+    : existing.username;
+
+  if (!nextUsername) {
+    throw new Error('username is required');
+  }
+
+  if (isProtectedUser(existing) && nextUsername !== PROTECTED_USERNAME) {
+    throw new Error('Cannot rename protected user etdoefresh');
+  }
+
+  const duplicate = Array.from(users.values()).find(
+    u => u.id !== id && normalizeUsername(u.username) === nextUsername,
+  );
+  if (duplicate) {
+    throw new Error('username already exists');
+  }
+
+  const updated: User = {
+    ...existing,
+    username: nextUsername,
+    displayName: input.displayName !== undefined ? input.displayName : existing.displayName,
+    updatedAt: new Date().toISOString(),
+  };
+
+  users.set(id, updated);
+  return updated;
+}
+
+export function deleteUser(id: string): boolean {
+  ensureProtectedUserExists();
+
+  const existing = users.get(id);
+  if (!existing) return false;
+
+  if (isProtectedUser(existing)) {
+    throw new Error('Cannot delete protected user etdoefresh');
+  }
+
+  return users.delete(id);
 }

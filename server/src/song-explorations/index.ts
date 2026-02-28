@@ -3,11 +3,15 @@
  * song-explorations — YouTube radio discovery pipeline
  *
  * Usage:
- *   tsx src/index.ts              # full pipeline: discover → filter → import
+ *   tsx src/index.ts              # full pipeline: discover → recommend → filter → import
  *   tsx src/index.ts discover     # discover + filter only (no import)
+ *   tsx src/index.ts recommend    # AI recommendations only (no YouTube discovery)
  *   tsx src/index.ts import       # import pending accepted candidates
  *   tsx src/index.ts status       # show library stats
  *   tsx src/index.ts cron         # print OpenClaw cron setup instructions
+ *
+ * Schedule: Hourly (60 min) with 5 tracks added per run
+ * Recommendations: Based on existing tracks in DB via Cloud Agent SDK
  */
 import { loadConfig } from './config.js';
 import { Store } from './data/store.js';
@@ -16,6 +20,7 @@ import { log, setLogLevel } from './utils/logger.js';
 import { discoverCandidates } from './pipeline/discover.js';
 import { filterCandidates } from './pipeline/filter.js';
 import { importAcceptedCandidates } from './pipeline/importer.js';
+import { runRecommendations } from './pipeline/recommend.js';
 import { checkSchedule, getCronInstructions } from './pipeline/scheduler.js';
 import { MockYouTubeAdapter } from './adapters/mock-youtube.js';
 import { LiveYouTubeAdapter } from './adapters/youtube.js';
@@ -27,7 +32,7 @@ async function main() {
   setLogLevel(config.logLevel);
 
   const command = process.argv[2] ?? 'full';
-  log.info(`song-explorations | mode=${config.mode} | command=${command}`);
+  log.info(`song-explorations | mode=${config.mode} | command=${command} | discoveryInterval=${config.discoveryIntervalMinutes}min | cap=${config.hourlyImportCap}/hr`);
 
   // Initialize store
   const store = new Store(config.dataDir);
@@ -40,6 +45,9 @@ async function main() {
   switch (command) {
     case 'discover':
       await runDiscover(adapter, store, config);
+      break;
+    case 'recommend':
+      await runRecommend(store, config);
       break;
     case 'import':
       runImport(store, config);
@@ -100,6 +108,28 @@ async function runDiscover(adapter: YouTubeAdapter, store: Store, config: any) {
   }
 }
 
+async function runRecommend(store: Store, config: any) {
+  if (!config.recommendation.enabled) {
+    log.info('AI recommendations disabled');
+    return;
+  }
+
+  log.info('Running AI recommendation pipeline...');
+  const result = await runRecommendations(store, config);
+
+  // Store candidates from AI recommendations
+  for (const c of result.candidates) {
+    store.addCandidate(c);
+    log.info(`  ✓ AI recommended: "${c.title}" (${c.videoId}) — confidence ${c.scoring?.score}`);
+  }
+
+  for (const err of result.errors) {
+    log.debug(`  ✗ Skipped recommendation: ${err.videoId ?? 'unknown'} — ${err.error}`);
+  }
+
+  log.info(`AI recommendations complete: ${result.candidates.length} added, ${result.errors.length} skipped`);
+}
+
 function runImport(store: Store, config: any) {
   const pending = store.getPendingCandidates();
   const accepted = store.getAcceptedCandidates().filter(c => !store.getTrack(c.videoId));
@@ -127,11 +157,15 @@ async function runFull(adapter: YouTubeAdapter, store: Store, config: any) {
   const runId = randomUUID().slice(0, 8);
   const startedAt = new Date().toISOString();
   log.info(`── Run ${runId} starting ──`);
+  log.info(`Config: discovery=${config.discoveryIntervalMinutes}min interval, cap=${config.hourlyImportCap}/hr, AI-rec=${config.recommendation.enabled}`);
 
-  // Discovery
+  // 1. YouTube discovery
   await runDiscover(adapter, store, config);
 
-  // Import
+  // 2. AI recommendations (based on existing tracks)
+  await runRecommend(store, config);
+
+  // 3. Import accepted candidates
   runImport(store, config);
 
   // Log run
@@ -165,10 +199,16 @@ function showStatus(store: Store, config: any) {
   console.log(`  Pending:      ${candidates.filter(c => !c.decision).length}`);
   console.log(`Seen IDs:       ${store.getSeenVideoIds().length}`);
   console.log(`\nSchedule:`);
+  console.log(`  Interval:     ${config.discoveryIntervalMinutes} minutes (hourly)`);
   console.log(`  Last run:     ${schedule.lastRunAt ?? 'never'}`);
   console.log(`  Can discover: ${schedule.canRunDiscovery}`);
   console.log(`  Imported/hr:  ${schedule.tracksImportedThisHour}/${config.hourlyImportCap}`);
   console.log(`  Cap remain:   ${schedule.importCapRemaining}`);
+  console.log(`\nAI Recommendations:`);
+  console.log(`  Enabled:      ${config.recommendation.enabled}`);
+  console.log(`  Interval:     ${config.recommendation.intervalMinutes} minutes`);
+  console.log(`  Add per run:  ${config.recommendation.addPerRunCap}`);
+  console.log(`  Model:        ${config.recommendation.model}`);
 
   if (tracks.length > 0) {
     const sorted = [...tracks].sort((a, b) => b.plays - a.plays);

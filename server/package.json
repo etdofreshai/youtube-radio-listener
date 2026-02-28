@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "song:explore": "tsx src/song-explorations/index.ts",
     "song:discover": "tsx src/song-explorations/index.ts discover",
+    "song:recommend": "tsx src/song-explorations/index.ts recommend",
     "song:import": "tsx src/song-explorations/index.ts import",
     "song:status": "tsx src/song-explorations/index.ts status",
     "song:cron": "tsx src/song-explorations/index.ts cron",
@@ -19,7 +20,8 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "pg": "^8.19.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -28,6 +30,7 @@
     "@types/pg": "^8.16.0",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

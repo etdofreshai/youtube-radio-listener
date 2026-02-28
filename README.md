@@ -107,6 +107,102 @@ npm start
 | `OPENAI_API_KEY` | _(empty)_ | Required for Stage B AI enrichment |
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model for AI research |
 
+### Song Explorations / AI Recommendations
+
+| Variable | Default | Description |
+|---|---|---|
+| `SONG_EXPLORATIONS_MODE` | `dry-run` | Mode: `dry-run` (mock) or `live` (real YouTube API) |
+| `SONG_EXPLORATIONS_DISCOVERY_INTERVAL_MINUTES` | `60` | Discovery interval (hourly by default) |
+| `SONG_EXPLORATIONS_HOURLY_IMPORT_CAP` | `5` | Max tracks to import per hour |
+| `SONG_EXPLORATIONS_MIN_CONFIDENCE_SCORE` | `0.5` | Minimum score (0-1) to accept a candidate |
+| `RECOMMENDATION_ENABLED` | `true` | Enable AI-powered recommendations |
+| `RECOMMENDATION_INTERVAL_MINUTES` | `60` | How often to run recommendations (hourly) |
+| `RECOMMENDATION_ADD_PER_RUN` | `5` | Max tracks to add per recommendation run |
+| `RECOMMENDATION_MODEL` | `gpt-4o` | AI model for recommendations |
+| `CLOUD_AGENT_OAUTH_TOKEN` | _(empty)_ | OAuth token for Cloud Agent SDK authentication |
+| `CLOUD_AGENT_ENDPOINT` | OpenAI API | API endpoint for Cloud Agent SDK |
+
+## Song Explorations — AI Recommendations
+
+Automated music discovery using AI-powered recommendations based on your existing library.
+
+### How It Works
+
+1. **Discovery Pipeline** runs hourly (configurable via `RECOMMENDATION_INTERVAL_MINUTES`)
+2. **AI analyzes** your existing tracks (top played + recently added) as seed context
+3. **Generates up to 5 recommendations** per run (configurable via `RECOMMENDATION_ADD_PER_RUN`)
+4. **Respects hourly cap** — won't exceed `SONG_EXPLORATIONS_HOURLY_IMPORT_CAP` tracks per hour
+5. **Manual adds coexist** — manually added tracks count toward the cap but don't block auto-recommendations
+
+### Schedule
+
+- **Cadence:** Hourly (60 minutes by default)
+- **Add per run:** 5 tracks max
+- **Hourly cap:** 5 tracks total (includes manual + auto)
+
+### AI Response Format
+
+The Cloud Agent SDK returns structured JSON that the importer can parse reliably:
+
+```json
+{
+  "recommendations": [
+    {
+      "videoId": "abc123defgh",
+      "title": "Track Title",
+      "channelName": "Artist Name",
+      "channelId": "UC...",
+      "durationSeconds": 240,
+      "confidence": 0.85,
+      "reason": "Similar style to your top tracks"
+    }
+  ],
+  "model": "gpt-4o",
+  "generatedAt": "2024-01-15T10:30:00Z",
+  "notes": "optional notes"
+}
+```
+
+### CLI Commands
+
+```bash
+# Full pipeline (discover + recommend + import)
+npm run song:explore
+
+# Discovery only (YouTube API)
+npm run song:discover
+
+# AI recommendations only
+npm run song:recommend
+
+# Import pending candidates
+npm run song:import
+
+# Show status
+npm run song:status
+
+# Print cron setup instructions
+npm run song:cron
+```
+
+### Manual vs Auto-Recommendations
+
+Both manual track additions and auto-recommendations share the same hourly import cap:
+
+- **Manual adds** via UI/API are immediate
+- **Auto-recommendations** run hourly and fill remaining cap space
+- If you add 3 tracks manually, only 2 auto-recommendations will be accepted that hour
+- Recommendations are based on your existing library, not external trends
+
+### OpenClaw Cron Setup
+
+```bash
+# Hourly discovery + import
+openclaw cron add --schedule "0 * * * *" \
+  --name "song-discovery-hourly" \
+  --prompt "Run: cd /path/to/youtube-radio-listener/server && npm run song:explore"
+```
+
 ## Persistence & Event History
 
 ### Architecture

@@ -14,6 +14,10 @@ import eventsRouter from './routes/events';
 import sessionsRouter from './routes/sessions';
 import artistsRouter from './routes/artists';
 import albumsRouter from './routes/albums';
+import usersRouter from './routes/users';
+import authRouter from './routes/auth';
+import radiosRouter from './routes/radios';
+import { ensureProtectedUser } from './routes/users-init';
 import { startScheduler } from './services/scheduler';
 import { logStartupDiagnostics } from './deps';
 
@@ -37,6 +41,9 @@ app.use('/api/events', eventsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/artists', artistsRouter);
 app.use('/api/albums', albumsRouter);
+app.use('/api/radios', radiosRouter);
+app.use('/api/users', usersRouter);
+app.use('/api/auth', authRouter);
 
 // Serve static frontend in production
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -73,6 +80,8 @@ async function start() {
         console.error('   ❌ Database: schema validation failed — required tables/columns missing');
         process.exit(1);
       }
+
+      await ensureProtectedUser();
     } catch (err) {
       console.error('   ❌ Database: connection error:', err);
       process.exit(1);

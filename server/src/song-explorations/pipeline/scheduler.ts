@@ -6,6 +6,8 @@
  * 2. OpenClaw cron job instructions
  *
  * The actual scheduling is done via OpenClaw cron, not an internal loop.
+ *
+ * Default cadence: Hourly (60 minutes) with 5 tracks added per run.
  */
 import { Store } from '../data/store.js';
 import type { AppConfig } from '../types.js';
@@ -49,29 +51,34 @@ export function checkSchedule(store: Store, config: AppConfig): ScheduleCheck {
   };
 }
 
-/** Generate OpenClaw cron job setup instructions */
+/** Generate OpenClaw cron job setup instructions (hourly cadence) */
 export function getCronInstructions(projectDir: string): string {
   return `
 # ── OpenClaw Cron Setup for song-explorations ──
+#
+# Default: Hourly cadence, 5 tracks added per run
+# Recommendations based on existing tracks in DB
 
-# Discovery run every 20 minutes:
-openclaw cron add --schedule "*/20 * * * *" \\
-  --name "song-discovery" \\
-  --prompt "Run: cd ${projectDir} && npx tsx src/index.ts discover"
-
-# Import run every hour (picks best candidates up to cap):
+# Discovery + Import run every hour (at minute 0):
 openclaw cron add --schedule "0 * * * *" \\
+  --name "song-discovery-hourly" \\
+  --prompt "Run: cd ${projectDir} && npx tsx src/song-explorations/index.ts"
+
+# Alternative: Separate discover and import schedules
+
+# Discovery only - every hour:
+openclaw cron add --schedule "0 * * * *" \\
+  --name "song-discover" \\
+  --prompt "Run: cd ${projectDir} && npx tsx src/song-explorations/index.ts discover"
+
+# Import only - every hour at minute 5 (after discovery):
+openclaw cron add --schedule "5 * * * *" \\
   --name "song-import" \\
-  --prompt "Run: cd ${projectDir} && npx tsx src/index.ts import"
+  --prompt "Run: cd ${projectDir} && npx tsx src/song-explorations/index.ts import"
 
 # Status check daily at 9am CST (3pm UTC):
 openclaw cron add --schedule "0 15 * * *" \\
   --name "song-status" \\
-  --prompt "Run: cd ${projectDir} && npx tsx src/index.ts status"
-
-# ── Alternative: combined discover+import every 20 min ──
-openclaw cron add --schedule "*/20 * * * *" \\
-  --name "song-explore" \\
-  --prompt "Run: cd ${projectDir} && npx tsx src/index.ts"
+  --prompt "Run: cd ${projectDir} && npx tsx src/song-explorations/index.ts status"
 `.trim();
 }

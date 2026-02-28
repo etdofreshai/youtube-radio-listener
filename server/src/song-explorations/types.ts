@@ -121,16 +121,35 @@ export interface YouTubeAdapter {
 
 // ─── Config ───
 
+export interface RecommendationConfig {
+  /** Enable/disable AI-powered recommendations */
+  enabled: boolean;
+  /** How often to run recommendation discovery (minutes). Default: 60 (hourly) */
+  intervalMinutes: number;
+  /** Maximum tracks to add per recommendation run. Default: 5 */
+  addPerRunCap: number;
+  /** Cloud Agent SDK OAuth token for authentication */
+  cloudAgentOAuthToken: string;
+  /** Model to use for recommendations */
+  model: string;
+  /** API endpoint for Cloud Agent SDK */
+  endpoint: string;
+}
+
 export interface AppConfig {
   mode: 'dry-run' | 'live';
   youtubeApiKey: string;
   dataDir: string;
+  /** Discovery interval in minutes. Default: 60 (hourly) */
   discoveryIntervalMinutes: number;
+  /** Maximum tracks to import per hour. Default: 5 */
   hourlyImportCap: number;
   minConfidenceScore: number;
   minDurationSeconds: number;
   maxDurationSeconds: number;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
+  /** AI-powered recommendation configuration */
+  recommendation: RecommendationConfig;
 }
 
 // ─── Store Types ───
