@@ -488,6 +488,27 @@ export interface UpdateRadioStationInput {
   tags?: string[];
 }
 
+// ---------- Playback State (cross-device sync) ----------
+
+export interface PlayHistoryEntry {
+  trackId: string;
+  playedAt: string;
+}
+
+export interface PlaybackState {
+  userId: string;
+  currentTrackId: string | null;
+  positionSec: number;
+  isPlaying: boolean;
+  queue: string[];
+  playHistory: PlayHistoryEntry[];
+  updatedAt: string;
+  // Hydrated from server
+  currentTrack?: Track | null;
+  queueTracks?: Track[];
+  historyTracks?: Track[];
+}
+
 // ---------- Events / History ----------
 
 export interface AppEvent {

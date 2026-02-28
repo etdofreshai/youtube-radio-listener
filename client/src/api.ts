@@ -435,6 +435,25 @@ export interface ResolvedStream {
 export const resolveRadioStream = (idOrSlug: string) =>
   request<ResolvedStream>(`/api/radios/${encodeURIComponent(idOrSlug)}/resolve-stream`);
 
+// ---------- Playback State (cross-device sync) ----------
+
+import type { PlaybackState } from './types';
+
+export const getPlaybackState = () =>
+  request<PlaybackState>('/api/playback/state');
+
+export const updatePlaybackState = (data: {
+  currentTrackId?: string | null;
+  positionSec?: number;
+  isPlaying?: boolean;
+  queue?: string[];
+  addToHistory?: string;
+}) =>
+  request<PlaybackState>('/api/playback/state', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
 // ---------- Users ----------
 
 export interface User {

@@ -17,6 +17,7 @@ import albumsRouter from './routes/albums';
 import usersRouter from './routes/users';
 import authRouter from './routes/auth';
 import radiosRouter from './routes/radios';
+import playbackRouter from './routes/playback';
 import { ensureProtectedUser } from './routes/users-init';
 import { startScheduler } from './services/scheduler';
 import { logStartupDiagnostics } from './deps';
@@ -42,6 +43,7 @@ app.use('/api/sessions', sessionsRouter);
 app.use('/api/artists', artistsRouter);
 app.use('/api/albums', albumsRouter);
 app.use('/api/radios', radiosRouter);
+app.use('/api/playback', playbackRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/auth', authRouter);
 

@@ -490,6 +490,26 @@ CREATE TRIGGER update_learning_resources_updated_at
   BEFORE UPDATE ON track_learning_resources
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================
+-- v12: User Playback State (cross-device sync)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS playback_state (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  current_track_id UUID REFERENCES tracks(id) ON DELETE SET NULL,
+  position_sec REAL NOT NULL DEFAULT 0,
+  is_playing BOOLEAN NOT NULL DEFAULT false,
+  queue JSONB NOT NULL DEFAULT '[]'::jsonb,
+  play_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DROP TRIGGER IF EXISTS update_playback_state_updated_at ON playback_state;
+CREATE TRIGGER update_playback_state_updated_at
+  BEFORE UPDATE ON playback_state
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
 `;
 
 /**

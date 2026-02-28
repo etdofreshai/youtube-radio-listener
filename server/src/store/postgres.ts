@@ -11,6 +11,7 @@ import type {
   TrackVariant, CreateVariantInput, UpdateVariantInput, VariantKind,
   TrackGroup, LinkedTrackSummary,
   PlaySession, SessionMember, SessionState, SessionEvent,
+  PlaybackState, UpdatePlaybackStateInput, PlayHistoryEntry,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
   AudioStatus, VideoStatus, EnrichmentStatus, FieldConfidence,
@@ -2347,4 +2348,79 @@ export async function deleteRadioStation(idOrSlug: string): Promise<boolean> {
     [idOrSlug]
   );
   return (rowCount ?? 0) > 0;
+}
+
+// ============================================================
+// Playback State (cross-device sync)
+// ============================================================
+
+function rowToPlaybackState(row: any): PlaybackState {
+  return {
+    userId: row.user_id,
+    currentTrackId: row.current_track_id ?? null,
+    positionSec: parseFloat(row.position_sec) || 0,
+    isPlaying: row.is_playing ?? false,
+    queue: Array.isArray(row.queue) ? row.queue : [],
+    playHistory: Array.isArray(row.play_history) ? row.play_history : [],
+    updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
+  };
+}
+
+export async function getPlaybackState(userId: string): Promise<PlaybackState | null> {
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT * FROM playback_state WHERE user_id = $1', [userId]);
+  return rows.length > 0 ? rowToPlaybackState(rows[0]) : null;
+}
+
+export async function upsertPlaybackState(userId: string, update: UpdatePlaybackStateInput): Promise<PlaybackState> {
+  const pool = getPool();
+
+  // Build the UPSERT — always ensure a row exists
+  const sets: string[] = [];
+  const vals: any[] = [userId];
+  let idx = 2;
+
+  if (update.currentTrackId !== undefined) {
+    sets.push(`current_track_id = $${idx++}`);
+    vals.push(update.currentTrackId);
+  }
+  if (update.positionSec !== undefined) {
+    sets.push(`position_sec = $${idx++}`);
+    vals.push(update.positionSec);
+  }
+  if (update.isPlaying !== undefined) {
+    sets.push(`is_playing = $${idx++}`);
+    vals.push(update.isPlaying);
+  }
+  if (update.queue !== undefined) {
+    sets.push(`queue = $${idx++}`);
+    vals.push(JSON.stringify(update.queue));
+  }
+  if (update.playHistory !== undefined) {
+    sets.push(`play_history = $${idx++}`);
+    vals.push(JSON.stringify(update.playHistory));
+  }
+
+  if (sets.length === 0) {
+    // Nothing to update — just ensure row exists and return it
+    const { rows } = await pool.query(`
+      INSERT INTO playback_state (user_id)
+      VALUES ($1)
+      ON CONFLICT (user_id) DO NOTHING
+      RETURNING *
+    `, [userId]);
+    if (rows.length > 0) return rowToPlaybackState(rows[0]);
+    // Row already existed
+    const existing = await getPlaybackState(userId);
+    return existing!;
+  }
+
+  const { rows } = await pool.query(`
+    INSERT INTO playback_state (user_id, ${sets.map(s => s.split(' = ')[0]).join(', ')})
+    VALUES ($1, ${Array.from({ length: sets.length }, (_, i) => `$${i + 2}`).join(', ')})
+    ON CONFLICT (user_id) DO UPDATE SET ${sets.join(', ')}, updated_at = now()
+    RETURNING *
+  `, vals);
+
+  return rowToPlaybackState(rows[0]);
 }

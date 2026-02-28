@@ -441,6 +441,20 @@ export function deleteRadioStation(idOrSlug: string) {
 }
 
 // ============================================================
+// Playback State (cross-device sync)
+// ============================================================
+
+export function getPlaybackState(userId: string) {
+  if (!usePostgres) return Promise.resolve(null);
+  return pgStore.getPlaybackState(userId);
+}
+
+export function upsertPlaybackState(...args: Parameters<typeof pgStore.upsertPlaybackState>) {
+  if (!usePostgres) throw new Error('Playback state requires PostgreSQL');
+  return pgStore.upsertPlaybackState(...args);
+}
+
+// ============================================================
 // Meta
 // ============================================================
 

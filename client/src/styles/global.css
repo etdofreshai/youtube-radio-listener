@@ -536,6 +536,8 @@ a:hover {
   z-index: 50;
   box-shadow: var(--shadow);
   animation: menuFadeIn 0.12s ease;
+  will-change: opacity, transform;
+  transform: translateZ(0); /* promote to own GPU layer, prevent flicker */
 }
 
 @keyframes menuFadeIn {
@@ -4984,4 +4986,245 @@ a:hover {
 .btn-impersonate:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* ============================================================
+   Queue & History Panel (Now Playing page)
+   ============================================================ */
+
+.now-playing-queue-panel {
+  margin-top: 1.5rem;
+  background: var(--surface, #1e1e2e);
+  border-radius: var(--radius, 8px);
+  border: 1px solid rgba(255,255,255,0.06);
+  overflow: hidden;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+.queue-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.15);
+}
+
+.queue-panel-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.queue-tab-btn {
+  background: transparent;
+  color: var(--text-muted, #999);
+  border: none;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.queue-tab-btn:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text, #fff);
+}
+
+.queue-tab-btn.queue-tab-active {
+  background: rgba(255,255,255,0.1);
+  color: var(--text, #fff);
+}
+
+.queue-tab-count {
+  background: rgba(255,255,255,0.12);
+  color: var(--text-muted, #999);
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+  font-weight: 600;
+}
+
+.queue-tab-active .queue-tab-count {
+  background: var(--accent, #6c5ce7);
+  color: #fff;
+}
+
+.queue-sync-indicator {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.queue-synced { opacity: 0.5; }
+.queue-unsynced { opacity: 0.8; }
+
+.queue-panel-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Queue items */
+.queue-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--text, #fff);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+  width: 100%;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.queue-item:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.queue-item-current {
+  background: rgba(108,92,231,0.12);
+  cursor: default;
+}
+
+.queue-item-current:hover {
+  background: rgba(108,92,231,0.15);
+}
+
+.queue-item-indicator {
+  min-width: 1.2rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted, #999);
+}
+
+.queue-item-current .queue-item-indicator {
+  color: var(--accent, #6c5ce7);
+  font-size: 0.9rem;
+}
+
+.queue-item-number {
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.5;
+}
+
+.queue-item-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.queue-item-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.queue-item-art-placeholder {
+  font-size: 1.1rem;
+  opacity: 0.4;
+}
+
+.queue-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.queue-item-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-item-artist {
+  font-size: 0.75rem;
+  color: var(--text-muted, #999);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-item-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent, #6c5ce7);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.queue-item-duration,
+.queue-item-ago {
+  font-size: 0.72rem;
+  color: var(--text-muted, #999);
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* Empty states */
+.queue-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  text-align: center;
+}
+
+.queue-empty-icon {
+  font-size: 2rem;
+  opacity: 0.4;
+  margin-bottom: 0.5rem;
+}
+
+.queue-empty p {
+  margin: 0;
+  color: var(--text-muted, #999);
+  font-size: 0.85rem;
+}
+
+.queue-empty-hint {
+  font-size: 0.75rem !important;
+  opacity: 0.6;
+  margin-top: 0.25rem !important;
+}
+
+/* Responsive: stack queue below on mobile */
+@media (max-width: 768px) {
+  .now-playing-queue-panel {
+    max-height: 300px;
+  }
+}
+
+/* Theater mode: hide queue panel */
+.now-playing-theater .now-playing-queue-panel {
+  display: none;
 }

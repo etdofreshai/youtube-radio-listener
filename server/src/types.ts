@@ -472,6 +472,32 @@ export interface PaginatedResponse<T> {
   sortDir: string;
 }
 
+// ---------- Playback State (cross-device sync) ----------
+
+/** Lightweight entry in play_history JSONB array */
+export interface PlayHistoryEntry {
+  trackId: string;
+  playedAt: string;  // ISO timestamp
+}
+
+export interface PlaybackState {
+  userId: string;
+  currentTrackId: string | null;
+  positionSec: number;
+  isPlaying: boolean;
+  queue: string[];              // ordered track IDs
+  playHistory: PlayHistoryEntry[];  // most recent first
+  updatedAt: string;
+}
+
+export interface UpdatePlaybackStateInput {
+  currentTrackId?: string | null;
+  positionSec?: number;
+  isPlaying?: boolean;
+  queue?: string[];
+  playHistory?: PlayHistoryEntry[];
+}
+
 // ---------- Scheduler / Queue ----------
 
 export interface SchedulerStatus {

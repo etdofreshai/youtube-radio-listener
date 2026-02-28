@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer } from '../components/AudioPlayer';
 import type { LoopMode } from '../components/AudioPlayer';
 import { getVideoUrl, downloadVideo as apiDownloadVideo, getTrack } from '../api';
+import { usePlaybackSync } from '../hooks/usePlaybackSync';
 import TrackMenu from '../components/TrackMenu';
+import type { Track } from '../types';
 
 export type MediaMode = 'video' | 'artwork' | 'lyrics';
 
@@ -65,6 +67,27 @@ export default function NowPlayingPage() {
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
 
   const hasVideo = currentTrack?.videoStatus === 'ready';
+
+  // Playback sync (cross-device) and queue state
+  const {
+    queue,
+    playHistory,
+    queueTracks,
+    historyTracks,
+    isSynced,
+    jumpToQueueTrack,
+    replayFromHistory,
+  } = usePlaybackSync();
+
+  type QueueTab = 'queue' | 'history';
+  const [queueTab, setQueueTab] = useState<QueueTab>('queue');
+
+  // Compute upcoming queue (tracks after current)
+  const currentQueueIndex = currentTrack ? queue.indexOf(currentTrack.id) : -1;
+  const upcomingIds = currentQueueIndex >= 0 ? queue.slice(currentQueueIndex + 1) : queue;
+  const upcomingTracks = upcomingIds
+    .map(id => queueTracks.find(t => t.id === id))
+    .filter(Boolean) as Track[];
 
   // ── Poll for video status updates while a download is in progress ──────────
   // currentTrack is set once when play() is called and never auto-refreshes,
@@ -373,6 +396,131 @@ export default function NowPlayingPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Queue & History Panel ── */}
+      <div className="now-playing-queue-panel">
+        <div className="queue-panel-header">
+          <div className="queue-panel-tabs">
+            <button
+              className={`queue-tab-btn ${queueTab === 'queue' ? 'queue-tab-active' : ''}`}
+              onClick={() => setQueueTab('queue')}
+            >
+              📋 Up Next {upcomingTracks.length > 0 && <span className="queue-tab-count">{upcomingTracks.length}</span>}
+            </button>
+            <button
+              className={`queue-tab-btn ${queueTab === 'history' ? 'queue-tab-active' : ''}`}
+              onClick={() => setQueueTab('history')}
+            >
+              📜 History {playHistory.length > 0 && <span className="queue-tab-count">{playHistory.length}</span>}
+            </button>
+          </div>
+          <span className={`queue-sync-indicator ${isSynced ? 'queue-synced' : 'queue-unsynced'}`} title={isSynced ? 'Synced across devices' : 'Not synced'}>
+            {isSynced ? '🔗' : '⛓️‍💥'}
+          </span>
+        </div>
+
+        <div className="queue-panel-body">
+          {queueTab === 'queue' && (
+            <div className="queue-list">
+              {/* Current track highlight */}
+              {currentTrack && (
+                <div className="queue-item queue-item-current">
+                  <div className="queue-item-indicator">▶</div>
+                  <div className="queue-item-art">
+                    {(currentTrack.artworkUrl ?? currentTrack.ytThumbnailUrl)
+                      ? <img src={(currentTrack.artworkUrl ?? currentTrack.ytThumbnailUrl)!} alt="" />
+                      : <span className="queue-item-art-placeholder">🎵</span>}
+                  </div>
+                  <div className="queue-item-info">
+                    <span className="queue-item-title">{currentTrack.title}</span>
+                    <span className="queue-item-artist">{currentTrack.artist}</span>
+                  </div>
+                  <span className="queue-item-badge">Now Playing</span>
+                </div>
+              )}
+
+              {upcomingTracks.length > 0 ? (
+                upcomingTracks.map((t, i) => (
+                  <button
+                    key={t.id}
+                    className="queue-item queue-item-upcoming"
+                    onClick={() => jumpToQueueTrack(t.id)}
+                    title={`Play "${t.title}"`}
+                  >
+                    <div className="queue-item-indicator queue-item-number">{i + 1}</div>
+                    <div className="queue-item-art">
+                      {(t.artworkUrl ?? t.ytThumbnailUrl)
+                        ? <img src={(t.artworkUrl ?? t.ytThumbnailUrl)!} alt="" />
+                        : <span className="queue-item-art-placeholder">🎵</span>}
+                    </div>
+                    <div className="queue-item-info">
+                      <span className="queue-item-title">{t.title}</span>
+                      <span className="queue-item-artist">{t.artist}</span>
+                    </div>
+                    {t.duration && <span className="queue-item-duration">{formatTime(t.duration)}</span>}
+                  </button>
+                ))
+              ) : (
+                <div className="queue-empty">
+                  <span className="queue-empty-icon">📋</span>
+                  <p>Queue is empty</p>
+                  <p className="queue-empty-hint">Play tracks to build your queue</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {queueTab === 'history' && (
+            <div className="queue-list">
+              {playHistory.length > 0 ? (
+                playHistory.slice(0, 20).map((entry, i) => {
+                  const t = historyTracks.find(ht => ht.id === entry.trackId);
+                  if (!t) return null;
+                  const ago = getTimeAgo(entry.playedAt);
+                  return (
+                    <button
+                      key={`${entry.trackId}-${i}`}
+                      className="queue-item queue-item-history"
+                      onClick={() => replayFromHistory(entry.trackId)}
+                      title={`Replay "${t.title}"`}
+                    >
+                      <div className="queue-item-indicator queue-item-number">{i + 1}</div>
+                      <div className="queue-item-art">
+                        {(t.artworkUrl ?? t.ytThumbnailUrl)
+                          ? <img src={(t.artworkUrl ?? t.ytThumbnailUrl)!} alt="" />
+                          : <span className="queue-item-art-placeholder">🎵</span>}
+                      </div>
+                      <div className="queue-item-info">
+                        <span className="queue-item-title">{t.title}</span>
+                        <span className="queue-item-artist">{t.artist}</span>
+                      </div>
+                      <span className="queue-item-ago">{ago}</span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="queue-empty">
+                  <span className="queue-empty-icon">📜</span>
+                  <p>No history yet</p>
+                  <p className="queue-empty-hint">Your recently played tracks will appear here</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
+}
+
+/** Format a timestamp as relative time ago string */
+function getTimeAgo(isoStr: string): string {
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }
