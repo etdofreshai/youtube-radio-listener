@@ -23,6 +23,13 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
   const isEditing = !!initial;
   const hasUrl = youtubeUrl.trim().length > 0;
 
+  /** Swap title and artist form values in-place (client-side only, not saved until submit). */
+  const handleSwapTitleArtist = () => {
+    const prevTitle = title;
+    setTitle(artist);
+    setArtist(prevTitle);
+  };
+
   /** Validate end-time text on every change; clear error once input becomes valid or empty. */
   const handleEndTimeChange = (raw: string) => {
     setEndTimeText(raw);
@@ -102,11 +109,21 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
         )}
       </div>
 
-      <div className="form-row">
+      <div className="form-row" style={{ alignItems: 'flex-end' }}>
         <div className="form-group">
           <label>Title{isEditing ? ' *' : ' (optional — auto-detected)'}</label>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder={isEditing ? 'Song title' : 'Leave blank to auto-detect'} />
         </div>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={handleSwapTitleArtist}
+          aria-label="Swap title and artist"
+          title="Swap title ↔ artist"
+          style={{ flexShrink: 0, marginBottom: 4, whiteSpace: 'nowrap' }}
+        >
+          ⇄ Swap
+        </button>
         <div className="form-group">
           <label>Artist{isEditing ? ' *' : ' (optional — auto-detected)'}</label>
           <input value={artist} onChange={e => setArtist(e.target.value)} placeholder={isEditing ? 'Artist name' : 'Leave blank to auto-detect'} />
