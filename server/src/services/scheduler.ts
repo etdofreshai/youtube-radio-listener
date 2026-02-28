@@ -71,8 +71,13 @@ async function tick(): Promise<void> {
         console.log(`[scheduler]   Queued ${track.id} for Stage ${stage} ("${track.title}" — confidence: ${track.metadataConfidence || 'none'})`);
       }
     }
-  } catch (err) {
-    console.error('[scheduler] Tick error:', err);
+  } catch (err: any) {
+    // Detect missing-table errors (PostgreSQL 42P01) — don't crash, just warn
+    if (err?.code === '42P01') {
+      console.error(`[scheduler] Tick skipped — table missing (${err.message}). Schema may not be initialized yet.`);
+    } else {
+      console.error('[scheduler] Tick error:', err);
+    }
   }
 }
 

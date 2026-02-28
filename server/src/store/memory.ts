@@ -226,9 +226,12 @@ export function createTrack(input: CreateTrackInput): Track {
   const now = new Date().toISOString();
   const track: Track = {
     id: uuidv4(),
+    slug: null,
     youtubeUrl: input.youtubeUrl,
     title: input.title,
     artist: input.artist,
+    artistId: null,
+    albumId: null,
     startTimeSec: input.startTimeSec ?? null,
     endTimeSec: input.endTimeSec ?? null,
     volume: input.volume ?? 100,
@@ -363,6 +366,7 @@ export function createPlaylist(input: CreatePlaylistInput): Playlist {
   const playlist: Playlist = {
     id: uuidv4(),
     name: input.name,
+    slug: null,
     description: input.description ?? '',
     trackIds: input.trackIds ?? [],
     createdAt: now,

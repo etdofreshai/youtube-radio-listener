@@ -34,7 +34,7 @@ app.get('*', (_req, res) => {
 });
 
 async function start() {
-  // Database connectivity check
+  // Database connectivity check + auto-migration
   if (process.env.DATABASE_URL) {
     try {
       const { checkConnection } = await import('./db/pool');
@@ -43,6 +43,22 @@ async function start() {
         console.log('   ✅ Database: PostgreSQL connected');
       } else {
         console.error('   ❌ Database: connection failed — falling back to in-memory would require restart without DATABASE_URL');
+        process.exit(1);
+      }
+
+      // Auto-migrate: ensure all tables and columns exist (idempotent)
+      const { ensureSchema, validateSchema } = await import('./db/migrate');
+      const migrated = await ensureSchema();
+      if (!migrated) {
+        console.error('   ❌ Database: schema migration failed');
+        process.exit(1);
+      }
+      console.log('   ✅ Database: schema up to date');
+
+      // Validate critical tables before proceeding
+      const valid = await validateSchema();
+      if (!valid) {
+        console.error('   ❌ Database: schema validation failed — required tables/columns missing');
         process.exit(1);
       }
     } catch (err) {
