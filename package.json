@@ -1,0 +1,20 @@
+{
+  "name": "nightwave",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nightwave — YouTube Radio Listener. Dark Spotify-like UI for YouTube music browsing.",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && npm run build",
+    "start": "cd server && npm start",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "typecheck": "cd server && npm run typecheck && cd ../client && npm run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
