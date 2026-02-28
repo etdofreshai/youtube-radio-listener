@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import type { YouTubeSearchResultItem, Track } from '../types';
 import * as api from '../api';
+import { usePreviewPlayer } from '../hooks/usePreviewPlayer';
+import type { PreviewState } from '../hooks/previewState';
 
 interface YouTubeSearchProps {
   /** Currently loaded tracks — used to detect duplicates */
@@ -16,6 +18,61 @@ interface ResultState {
   error?: string;
 }
 
+/* ---------- Preview button sub-component ---------- */
+
+function PreviewControls({
+  videoId,
+  previewState,
+  onPlay,
+  onPause,
+  onStop,
+}: {
+  videoId: string;
+  previewState: PreviewState;
+  onPlay: (videoId: string) => void;
+  onPause: () => void;
+  onStop: () => void;
+}) {
+  const isActive = previewState !== 'idle' && previewState !== 'error';
+
+  return (
+    <div className="yt-preview-controls">
+      {/* Play / Pause toggle */}
+      {previewState === 'loading' ? (
+        <button className="btn-preview btn-preview-loading" disabled title="Loading preview…">
+          <span className="preview-spinner" />
+        </button>
+      ) : previewState === 'playing' ? (
+        <button className="btn-preview btn-preview-pause" onClick={onPause} title="Pause preview">
+          ⏸
+        </button>
+      ) : (
+        <button
+          className="btn-preview btn-preview-play"
+          onClick={() => onPlay(videoId)}
+          title={previewState === 'paused' ? 'Resume preview' : 'Preview audio'}
+        >
+          {previewState === 'paused' ? '▶' : '🔊'}
+        </button>
+      )}
+
+      {/* Stop button — only visible when active or paused */}
+      {isActive && (
+        <button className="btn-preview btn-preview-stop" onClick={onStop} title="Stop preview">
+          ⏹
+        </button>
+      )}
+
+      {/* Error state */}
+      {previewState === 'error' && (
+        <span className="yt-preview-error" title="Preview not available">⚠</span>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Main component ---------- */
+
 export default function YouTubeSearch({ existingTracks, onTrackAdded }: YouTubeSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<YouTubeSearchResultItem[]>([]);
@@ -25,6 +82,9 @@ export default function YouTubeSearch({ existingTracks, onTrackAdded }: YouTubeS
   const [hasSearched, setHasSearched] = useState(false);
   // Track URLs that were added during this session (to persist across re-searches)
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
+
+  // Preview player
+  const preview = usePreviewPlayer();
 
   const isAlreadyInTracks = useCallback((youtubeUrl: string): boolean => {
     if (addedUrls.has(youtubeUrl)) return true;
@@ -43,6 +103,9 @@ export default function YouTubeSearch({ existingTracks, onTrackAdded }: YouTubeS
   const handleSearch = async () => {
     const q = query.trim();
     if (!q) return;
+
+    // Stop any active preview when starting a new search
+    preview.stop();
 
     setSearching(true);
     setSearchError('');
@@ -141,9 +204,10 @@ export default function YouTubeSearch({ existingTracks, onTrackAdded }: YouTubeS
             const alreadyInTracks = isAlreadyInTracks(item.youtubeUrl);
             const isAdded = state?.addState === 'added' || alreadyInTracks;
             const isAdding = state?.addState === 'adding';
+            const previewState = preview.getState(item.videoId);
 
             return (
-              <div key={item.videoId} className={`yt-result-card ${isAdded ? 'yt-result-added' : ''}`}>
+              <div key={item.videoId} className={`yt-result-card ${isAdded ? 'yt-result-added' : ''} ${previewState === 'playing' ? 'yt-result-previewing' : ''}`}>
                 <div className="yt-result-thumbnail">
                   {item.thumbnailUrl ? (
                     <img src={item.thumbnailUrl} alt={item.title} loading="lazy" />
@@ -174,9 +238,19 @@ export default function YouTubeSearch({ existingTracks, onTrackAdded }: YouTubeS
                   {state?.addState === 'error' && (
                     <div className="yt-result-error">{state.error}</div>
                   )}
+                  {previewState === 'error' && preview.activeVideoId === item.videoId && (
+                    <div className="yt-result-error">{preview.errorMessage || 'Preview unavailable'}</div>
+                  )}
                 </div>
 
                 <div className="yt-result-action">
+                  <PreviewControls
+                    videoId={item.videoId}
+                    previewState={previewState}
+                    onPlay={preview.play}
+                    onPause={preview.pause}
+                    onStop={preview.stop}
+                  />
                   {isAdded ? (
                     <span className="yt-result-added-badge">✅ Added</span>
                   ) : (

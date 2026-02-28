@@ -93,6 +93,11 @@ export function getAudioUrl(trackId: string): string {
   return `${BASE}/api/audio/${trackId}`;
 }
 
+// Preview URL helper — streams audio directly from YouTube via server proxy
+export function getPreviewUrl(videoId: string): string {
+  return `${BASE}/api/preview/${videoId}`;
+}
+
 // ---------- Playlists ----------
 
 export const getPlaylists = () => request<Playlist[]>('/api/playlists');
