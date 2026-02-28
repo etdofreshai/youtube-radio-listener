@@ -68,7 +68,7 @@ export async function importPlaylistTracks(
       if (existing) {
         skipped_existing.push({
           videoId: item.videoId,
-          title: item.title ?? null,
+          title: item.title?.trim() || null,
           existingTrackId: existing.trackId,
         });
         continue;
@@ -82,7 +82,7 @@ export async function importPlaylistTracks(
       const msg = err instanceof Error ? err.message : String(err);
       failed.push({
         videoId: item.videoId,
-        title: item.title ?? null,
+        title: item.title?.trim() || null,
         reason: msg,
       });
     }
