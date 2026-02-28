@@ -463,7 +463,7 @@ export function getPlaylist(id: string): Playlist | undefined {
   return playlists.get(id);
 }
 
-export function createPlaylist(input: CreatePlaylistInput): Playlist {
+export function createPlaylist(input: CreatePlaylistInput, userId?: string | null, username?: string | null): Playlist {
   const now = new Date().toISOString();
   const playlist: Playlist = {
     id: uuidv4(),
@@ -471,6 +471,12 @@ export function createPlaylist(input: CreatePlaylistInput): Playlist {
     slug: null,
     description: input.description ?? '',
     trackIds: input.trackIds ?? [],
+    ownerId: userId ?? null,
+    ownerUsername: username ?? null,
+    updatedBy: userId ?? null,
+    updatedByUsername: username ?? null,
+    isPublic: input.isPublic ?? false,
+    isEditableByOthers: input.isEditableByOthers ?? false,
     createdAt: now,
     updatedAt: now,
   };

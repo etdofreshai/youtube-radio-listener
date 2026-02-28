@@ -80,6 +80,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [currentUser, setCurrentUserState] = useState<User | null>(null);
   const [activeUserId] = useState<string | null>(getActiveUserId);
 
+  // Impersonation state — restored from sessionStorage on mount
+  const [impersonatedUserId, setImpersonatedUserIdState] = useState<string | null>(
+    () => getImpersonatedUserId()
+  );
+  const [originalUserId, setOriginalUserIdState] = useState<string | null>(
+    () => getOriginalUserId()
+  );
+  const [impersonatedUser, setImpersonatedUser] = useState<User | null>(null);
+
+  // Fetch the impersonated user object when impersonatedUserId changes
+  useEffect(() => {
+    if (!impersonatedUserId) {
+      setImpersonatedUser(null);
+      return;
+    }
+    fetch(`/api/users/${impersonatedUserId}`)
+      .then((r) => {
+        if (!r.ok) throw new Error('Not found');
+        return r.json();
+      })
+      .then((user: User) => setImpersonatedUser(user))
+      .catch(() => {
+        // Invalid impersonated user — clear
+        clearImpersonation();
+        setImpersonatedUserIdState(null);
+        setOriginalUserIdState(null);
+        setImpersonatedUser(null);
+      });
+  }, [impersonatedUserId]);
+
   // On mount, check whether the server requires a password
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +170,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const logout = useCallback(() => {
     setPasswordVerified(false);
     setCurrentUser(null);
+    // Also clear impersonation on logout
+    clearImpersonation();
+    setImpersonatedUserIdState(null);
+    setOriginalUserIdState(null);
+    setImpersonatedUser(null);
   }, [setPasswordVerified, setCurrentUser]);
+
+  const impersonateUser = useCallback((userId: string) => {
+    if (!currentUser) return;
+    // Store the original admin user ID and set the impersonated user
+    const origId = originalUserId ?? currentUser.id;
+    setImpersonation(origId, userId);
+    setOriginalUserIdState(origId);
+    setImpersonatedUserIdState(userId);
+  }, [currentUser, originalUserId]);
+
+  const returnToOriginalUser = useCallback(() => {
+    clearImpersonation();
+    setImpersonatedUserIdState(null);
+    setOriginalUserIdState(null);
+    setImpersonatedUser(null);
+  }, []);
+
+  const isImpersonating = impersonatedUserId !== null;
 
   return (
     <AuthContext.Provider
@@ -152,6 +205,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setPasswordVerified,
         setCurrentUser,
         logout,
+        impersonatedUserId,
+        impersonatedUser,
+        originalUserId,
+        impersonateUser,
+        returnToOriginalUser,
+        isImpersonating,
       }}
     >
       {children}

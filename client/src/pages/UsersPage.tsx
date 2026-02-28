@@ -18,6 +18,7 @@ import {
   deleteUser,
   isProtectedUsername,
 } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 interface EditState {
   id: string;
@@ -28,9 +29,14 @@ interface EditState {
 }
 
 export default function UsersPage() {
+  const { currentUser, impersonateUser, isImpersonating, impersonatedUserId, originalUserId } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // The "real" current user is the original admin when impersonating, otherwise currentUser
+  const realUserId = isImpersonating ? originalUserId : currentUser?.id;
+  const isAdmin = currentUser?.role === 'admin';
 
   // Create form state
   const [newUsername, setNewUsername] = useState('');
@@ -291,6 +297,20 @@ export default function UsersPage() {
                     </div>
                   </div>
                   <div className="user-actions">
+                    {isAdmin && (
+                      <button
+                        onClick={() => impersonateUser(user.id)}
+                        disabled={user.id === realUserId}
+                        title={
+                          user.id === realUserId
+                            ? 'Cannot impersonate yourself'
+                            : `Impersonate ${user.displayName ?? user.username}`
+                        }
+                        className="btn-impersonate"
+                      >
+                        🎭 Impersonate
+                      </button>
+                    )}
                     <button onClick={() => startEdit(user)}>Edit</button>
                     <button
                       onClick={() => handleDelete(user)}
