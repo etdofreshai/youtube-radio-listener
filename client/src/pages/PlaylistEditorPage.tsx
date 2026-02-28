@@ -37,9 +37,9 @@ export default function PlaylistEditorPage() {
     if (!id) return;
     try {
       setLoading(true);
-      const [pl, tracks] = await Promise.all([api.getPlaylist(id), api.getTracks()]);
+      const [pl, tracksResult] = await Promise.all([api.getPlaylist(id), api.getTracks({ pageSize: 200 })]);
       setPlaylist(pl);
-      setAllTracks(tracks);
+      setAllTracks(tracksResult.data);
       setEditName(pl.name);
       setEditDesc(pl.description);
       setMetaDirty(false);

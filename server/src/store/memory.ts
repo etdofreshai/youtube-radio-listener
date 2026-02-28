@@ -4,6 +4,8 @@ import type {
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
   AudioStatus,
+  PaginationParams, PaginatedResponse,
+  SortableTrackField, SortDirection,
 } from '../types';
 
 // ---------- In-memory store ----------
@@ -12,12 +14,144 @@ const tracks = new Map<string, Track>();
 const playlists = new Map<string, Playlist>();
 const favorites = new Map<string, Favorite>(); // keyed by favorite id
 
+// ---------- Default metadata fields ----------
+
+function defaultMetadata(): Pick<Track,
+  'ytChannel' | 'ytChannelId' | 'ytUploadDate' | 'ytDescription' |
+  'ytThumbnailUrl' | 'ytViewCount' | 'ytLikeCount' |
+  'album' | 'releaseYear' | 'genre' | 'label' | 'isrc' | 'bpm' |
+  'metadataSource' | 'metadataConfidence' | 'lastEnrichedAt' |
+  'verified' | 'verifiedBy' | 'verifiedAt'
+> {
+  return {
+    ytChannel: null,
+    ytChannelId: null,
+    ytUploadDate: null,
+    ytDescription: null,
+    ytThumbnailUrl: null,
+    ytViewCount: null,
+    ytLikeCount: null,
+    album: null,
+    releaseYear: null,
+    genre: null,
+    label: null,
+    isrc: null,
+    bpm: null,
+    metadataSource: null,
+    metadataConfidence: null,
+    lastEnrichedAt: null,
+    verified: false,
+    verifiedBy: null,
+    verifiedAt: null,
+  };
+}
+
+// ---------- Sorting helper ----------
+
+function compareField(a: Track, b: Track, field: SortableTrackField, dir: SortDirection): number {
+  let valA: string | number | boolean | null;
+  let valB: string | number | boolean | null;
+
+  switch (field) {
+    case 'artist':
+      valA = (a.artist || '').toLowerCase();
+      valB = (b.artist || '').toLowerCase();
+      break;
+    case 'title':
+      valA = (a.title || '').toLowerCase();
+      valB = (b.title || '').toLowerCase();
+      break;
+    case 'youtubeUrl':
+      valA = (a.youtubeUrl || '').toLowerCase();
+      valB = (b.youtubeUrl || '').toLowerCase();
+      break;
+    case 'createdAt':
+      valA = new Date(a.createdAt).getTime();
+      valB = new Date(b.createdAt).getTime();
+      break;
+    case 'updatedAt':
+      valA = new Date(a.updatedAt).getTime();
+      valB = new Date(b.updatedAt).getTime();
+      break;
+    case 'duration':
+      valA = a.duration ?? -1;
+      valB = b.duration ?? -1;
+      break;
+    case 'verified':
+      valA = a.verified ? 1 : 0;
+      valB = b.verified ? 1 : 0;
+      break;
+    case 'album':
+      valA = (a.album || '').toLowerCase();
+      valB = (b.album || '').toLowerCase();
+      break;
+    case 'genre':
+      valA = (a.genre || '').toLowerCase();
+      valB = (b.genre || '').toLowerCase();
+      break;
+    case 'releaseYear':
+      valA = a.releaseYear ?? -1;
+      valB = b.releaseYear ?? -1;
+      break;
+    default:
+      valA = new Date(a.createdAt).getTime();
+      valB = new Date(b.createdAt).getTime();
+  }
+
+  let cmp = 0;
+  if (valA < valB) cmp = -1;
+  else if (valA > valB) cmp = 1;
+
+  return dir === 'desc' ? -cmp : cmp;
+}
+
 // ---------- Tracks ----------
 
+/** Get all tracks (legacy — returns newest first) */
 export function getAllTracks(): Track[] {
   return Array.from(tracks.values()).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+}
+
+/** Get tracks with pagination, sorting, and filtering */
+export function getTracksPaginated(params: PaginationParams): PaginatedResponse<Track> {
+  let result = Array.from(tracks.values());
+
+  // Filter by search
+  if (params.search) {
+    const q = params.search.toLowerCase();
+    result = result.filter(t =>
+      t.title.toLowerCase().includes(q) ||
+      t.artist.toLowerCase().includes(q) ||
+      (t.album && t.album.toLowerCase().includes(q)) ||
+      (t.genre && t.genre.toLowerCase().includes(q))
+    );
+  }
+
+  // Filter by verification status
+  if (params.verified !== undefined) {
+    result = result.filter(t => t.verified === params.verified);
+  }
+
+  // Sort
+  result.sort((a, b) => compareField(a, b, params.sortBy, params.sortDir));
+
+  const total = result.length;
+  const totalPages = Math.max(1, Math.ceil(total / params.pageSize));
+  const page = Math.min(params.page, totalPages);
+  const start = (page - 1) * params.pageSize;
+  const data = result.slice(start, start + params.pageSize);
+
+  return {
+    data,
+    total,
+    page,
+    pageSize: params.pageSize,
+    totalPages,
+    sortBy: params.sortBy,
+    sortDir: params.sortDir,
+  };
 }
 
 export function getTrack(id: string): Track | undefined {
@@ -43,6 +177,8 @@ export function createTrack(input: CreateTrackInput): Track {
     audioFilename: null,
     duration: null,
     lastDownloadAt: null,
+    // Metadata + verification defaults
+    ...defaultMetadata(),
   };
   tracks.set(track.id, track);
   return track;
@@ -51,9 +187,24 @@ export function createTrack(input: CreateTrackInput): Track {
 export function updateTrack(id: string, input: UpdateTrackInput): Track | null {
   const existing = tracks.get(id);
   if (!existing) return null;
+
+  // Only apply defined fields from input
+  const updates: Partial<Track> = {};
+  if (input.youtubeUrl !== undefined) updates.youtubeUrl = input.youtubeUrl;
+  if (input.title !== undefined) updates.title = input.title;
+  if (input.artist !== undefined) updates.artist = input.artist;
+  if (input.startTimeSec !== undefined) updates.startTimeSec = input.startTimeSec;
+  if (input.endTimeSec !== undefined) updates.endTimeSec = input.endTimeSec;
+  if (input.volume !== undefined) updates.volume = input.volume;
+  if (input.notes !== undefined) updates.notes = input.notes;
+  if (input.album !== undefined) updates.album = input.album;
+  if (input.releaseYear !== undefined) updates.releaseYear = input.releaseYear;
+  if (input.genre !== undefined) updates.genre = input.genre;
+  if (input.label !== undefined) updates.label = input.label;
+
   const updated: Track = {
     ...existing,
-    ...input,
+    ...updates,
     updatedAt: new Date().toISOString(),
   };
   tracks.set(id, updated);
@@ -79,6 +230,46 @@ export function updateTrackAudio(
     audioFilename: fields.audioFilename ?? existing.audioFilename,
     duration: fields.duration ?? existing.duration,
     lastDownloadAt: fields.lastDownloadAt ?? existing.lastDownloadAt,
+    updatedAt: new Date().toISOString(),
+  };
+  tracks.set(id, updated);
+  return updated;
+}
+
+/** Update metadata enrichment fields on a track */
+export function updateTrackMetadata(
+  id: string,
+  fields: Partial<Pick<Track,
+    'ytChannel' | 'ytChannelId' | 'ytUploadDate' | 'ytDescription' |
+    'ytThumbnailUrl' | 'ytViewCount' | 'ytLikeCount' |
+    'album' | 'releaseYear' | 'genre' | 'label' | 'isrc' | 'bpm' |
+    'metadataSource' | 'metadataConfidence' | 'lastEnrichedAt'
+  >>
+): Track | null {
+  const existing = tracks.get(id);
+  if (!existing) return null;
+  const updated: Track = {
+    ...existing,
+    ...fields,
+    updatedAt: new Date().toISOString(),
+  };
+  tracks.set(id, updated);
+  return updated;
+}
+
+/** Set verification status on a track */
+export function verifyTrack(
+  id: string,
+  verified: boolean,
+  verifiedBy?: string | null
+): Track | null {
+  const existing = tracks.get(id);
+  if (!existing) return null;
+  const updated: Track = {
+    ...existing,
+    verified,
+    verifiedBy: verified ? (verifiedBy ?? null) : null,
+    verifiedAt: verified ? new Date().toISOString() : null,
     updatedAt: new Date().toISOString(),
   };
   tracks.set(id, updated);
@@ -140,9 +331,7 @@ export function getAllFavorites(): Favorite[] {
 }
 
 export function addFavorite(trackId: string): Favorite | null {
-  // Check if track exists
   if (!tracks.has(trackId)) return null;
-  // Check if already favorited
   for (const fav of favorites.values()) {
     if (fav.trackId === trackId) return fav;
   }

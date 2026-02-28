@@ -348,10 +348,10 @@ a:hover {
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Track row — updated grid with play column */
+/* Track row — updated grid with play, title, artist, duration, status, verified, date, actions */
 .track-row {
   display: grid;
-  grid-template-columns: 40px 1fr 80px 120px 60px 160px;
+  grid-template-columns: 40px 1.5fr 1fr 80px 110px 50px 110px 160px;
   align-items: center;
   padding: 10px 16px;
   border-radius: var(--radius);
@@ -365,9 +365,224 @@ a:hover {
   font-weight: 600;
 }
 
+.track-header span {
+  user-select: none;
+}
+
 .track-active {
   background: var(--bg-tertiary);
   border-left: 3px solid var(--accent);
+}
+
+.track-expanded {
+  background: var(--bg-tertiary);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* ---------- Sortable headers ---------- */
+
+.sortable-header {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s;
+}
+
+.sortable-header:hover {
+  color: var(--text-primary);
+}
+
+.sort-indicator {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.sort-indicator.active {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* ---------- Title cell ---------- */
+
+.track-title-cell {
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.track-title-cell:hover .track-title {
+  color: var(--accent);
+}
+
+.track-album {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Verify button ---------- */
+
+.btn-verify {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.btn-verify:hover {
+  border-color: var(--success);
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.btn-verify.verified {
+  border-color: var(--success);
+  background: rgba(34, 197, 94, 0.15);
+}
+
+/* ---------- Expandable detail panel ---------- */
+
+.track-detail {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 4px;
+}
+
+.track-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.track-detail-section h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+}
+
+.track-detail-section dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 0.82rem;
+}
+
+.track-detail-section dt {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.track-detail-section dd {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.track-detail-provenance {
+  margin-top: 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ---------- Pagination ---------- */
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagination-info {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pagination-page {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.pagination-size select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.pagination-size select:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+/* ---------- Search ---------- */
+
+.tracks-search {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.search-input {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  width: 200px;
+  transition: border-color 0.15s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
 }
 
 /* Play button */
@@ -588,4 +803,159 @@ a:hover {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border);
+}
+
+/* ===== Playlist Editor ===== */
+
+.playlist-editor {
+  max-width: 1200px;
+}
+
+.editor-section {
+  margin-bottom: 24px;
+}
+
+.editor-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-count {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.editor-meta-form {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.editor-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .editor-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+.editor-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.editor-track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.editor-track-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  transition: background 0.15s;
+  cursor: grab;
+}
+
+.editor-track-item:hover {
+  background: var(--bg-hover);
+}
+
+.editor-track-item:active {
+  cursor: grabbing;
+}
+
+.editor-track-available {
+  cursor: default;
+}
+
+.editor-track-grip {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.editor-track-number {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.editor-track-info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editor-track-info .track-title {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-track-info .track-artist {
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-track-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.editor-track-actions .btn-icon {
+  font-size: 0.75rem;
+  padding: 4px 6px;
+}
+
+.editor-track-actions .btn-icon:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.editor-remove-btn {
+  color: var(--danger) !important;
+}
+
+.editor-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+}
+
+.editor-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
