@@ -106,6 +106,8 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   albumName?: string | null;     // denormalized album title
   albumSlug?: string | null;     // denormalized album slug
   variants?: TrackVariant[];     // all YouTube URL variants for this canonical track
+  trackGroupId?: string | null;  // group id when linked to alternate track rows
+  linkedTracks?: LinkedTrackSummary[]; // other track rows in the same group
 }
 
 /** Lightweight artist reference embedded in track responses */
@@ -138,6 +140,17 @@ export interface Album {
   artistName: string | null;  // denormalized for convenience
   releaseYear: number | null;
   artworkUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------- User ----------
+
+export interface User {
+  id: string;
+  username: string;
+  displayName: string | null;
+  role: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -240,12 +253,132 @@ export interface UpdateVariantInput {
   metadata?: Record<string, any>;
 }
 
+// ---------- Track Linking / Grouping ----------
+
+export interface LinkedTrackSummary {
+  id: string;
+  title: string;
+  artist: string;
+  youtubeUrl: string;
+  isLiveStream: boolean;
+  trackGroupId: string | null;
+  createdAt: string;
+}
+
+export interface TrackGroup {
+  id: string;
+  name: string;
+  canonicalTrackId: string | null;
+  trackIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LinkTrackInput {
+  targetTrackId: string;
+  groupName?: string;
+}
+
+export interface SetPreferredLinkedTrackInput {
+  preferredTrackId: string;
+}
+
+// ---------- Learning Resources (Learn/Play) ----------
+
+export type LearningResourceType =
+  | 'guitar-tabs'
+  | 'guitar-chords'
+  | 'piano-keys'
+  | 'sheet-music'
+  | 'tutorial';
+
+export type LearningResourceConfidence = 'high' | 'medium' | 'low';
+
+export interface LearningResource {
+  id: string;
+  trackId: string;
+  resourceType: LearningResourceType;
+  title: string;
+  provider: string;
+  url: string;
+  snippet: string | null;
+  confidence: LearningResourceConfidence | null;
+  isSaved: boolean;
+  searchQuery: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningResourceGrouped {
+  guitarTabs: LearningResource[];
+  guitarChords: LearningResource[];
+  pianoKeys: LearningResource[];
+  sheetMusic: LearningResource[];
+  tutorials: LearningResource[];
+}
+
+export interface CreateLearningResourceInput {
+  resourceType: LearningResourceType;
+  title: string;
+  provider: string;
+  url: string;
+  snippet?: string;
+  confidence?: LearningResourceConfidence;
+}
+
+export interface SearchLearningResourcesResult {
+  trackId: string;
+  searchQuery: string;
+  cached: boolean;
+  searchedAt: string;
+  resources: LearningResourceGrouped;
+}
+
 // ---------- Favorite ----------
 
 export interface Favorite {
   id: string;
   trackId: string;
   likedAt: string;
+}
+
+// ---------- Radio Stations ----------
+
+export interface RadioStation {
+  id: string;
+  name: string;
+  slug: string;
+  streamUrl: string;
+  homepageUrl: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  isLive: boolean;
+  active: boolean;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRadioStationInput {
+  name: string;
+  streamUrl: string;
+  homepageUrl?: string;
+  description?: string;
+  imageUrl?: string;
+  isLive?: boolean;
+  active?: boolean;
+  tags?: string[];
+}
+
+export interface UpdateRadioStationInput {
+  name?: string;
+  streamUrl?: string;
+  homepageUrl?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  isLive?: boolean;
+  active?: boolean;
+  tags?: string[];
 }
 
 // ---------- Input types ----------
@@ -292,6 +425,16 @@ export interface UpdatePlaylistInput {
   trackIds?: string[];
 }
 
+export interface CreateUserInput {
+  username: string;
+  displayName?: string | null;
+}
+
+export interface UpdateUserInput {
+  username?: string;
+  displayName?: string | null;
+}
+
 // ---------- Pagination / Sorting ----------
 
 export type SortableTrackField = 'artist' | 'title' | 'youtubeUrl' | 'createdAt' | 'updatedAt' | 'duration' | 'verified' | 'album' | 'genre' | 'releaseYear';
@@ -303,6 +446,8 @@ export interface PaginationParams {
   sortBy: SortableTrackField;
   sortDir: SortDirection;
   search?: string;    // full-text search across title + artist
+  query?: string;     // alias for search
+  artist?: string;    // filter by artist name/slug
   verified?: boolean; // filter by verification status
 }
 

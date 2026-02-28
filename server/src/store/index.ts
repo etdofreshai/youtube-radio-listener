@@ -307,7 +307,93 @@ export function findTracksByCanonicalIdentity(title: string, artist: string) {
   return pgStore.findTracksByCanonicalIdentity(title, artist);
 }
 
+export function getTrackGroup(trackId: string) {
+  if (!usePostgres) return Promise.resolve(undefined);
+  return pgStore.getTrackGroup(trackId);
+}
+
+export function getLinkedTracks(trackId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getLinkedTracks(trackId);
+}
+
+export function linkTracks(trackId: string, targetTrackId: string, groupName?: string) {
+  if (!usePostgres) throw new Error('Track linking requires PostgreSQL');
+  return pgStore.linkTracks(trackId, targetTrackId, groupName);
+}
+
+export function unlinkTracks(trackId: string, targetTrackId: string) {
+  if (!usePostgres) throw new Error('Track linking requires PostgreSQL');
+  return pgStore.unlinkTracks(trackId, targetTrackId);
+}
+
+export function setPreferredLinkedTrack(trackId: string, preferredTrackId: string) {
+  if (!usePostgres) throw new Error('Track linking requires PostgreSQL');
+  return pgStore.setPreferredLinkedTrack(trackId, preferredTrackId);
+}
+
+export function getPreferredPlaybackTrack(trackId: string) {
+  if (!usePostgres) return Promise.resolve(null);
+  return pgStore.getPreferredPlaybackTrack(trackId);
+}
+
 export { extractVideoId } from './postgres';
+
+// ============================================================
+// Learning Resources (postgres-only)
+// ============================================================
+
+export function getLearningResources(trackId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getLearningResources(trackId);
+}
+
+export function getCachedLearningResources(trackId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getCachedLearningResources(trackId);
+}
+
+export function getSavedLearningResources(trackId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getSavedLearningResources(trackId);
+}
+
+export function createLearningResources(
+  trackId: string,
+  resources: Parameters<typeof pgStore.createLearningResources>[1],
+  searchQuery: string
+) {
+  if (!usePostgres) throw new Error('Learning resources require PostgreSQL');
+  return pgStore.createLearningResources(trackId, resources, searchQuery);
+}
+
+export function createLearningResource(
+  trackId: string,
+  input: Parameters<typeof pgStore.createLearningResource>[1]
+) {
+  if (!usePostgres) throw new Error('Learning resources require PostgreSQL');
+  return pgStore.createLearningResource(trackId, input);
+}
+
+export function saveLearningResource(trackId: string, resourceId: string) {
+  if (!usePostgres) throw new Error('Learning resources require PostgreSQL');
+  return pgStore.saveLearningResource(trackId, resourceId);
+}
+
+export function unsaveLearningResource(trackId: string, resourceId: string) {
+  if (!usePostgres) throw new Error('Learning resources require PostgreSQL');
+  return pgStore.unsaveLearningResource(trackId, resourceId);
+}
+
+export function deleteLearningResource(trackId: string, resourceId: string) {
+  if (!usePostgres) throw new Error('Learning resources require PostgreSQL');
+  return pgStore.deleteLearningResource(trackId, resourceId);
+}
+
+export function clearCachedLearningResources(trackId: string) {
+  if (!usePostgres) return Promise.resolve();
+  return pgStore.clearCachedLearningResources(trackId);
+}
 
 // ============================================================
 // Meta

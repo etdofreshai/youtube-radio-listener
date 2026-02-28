@@ -377,6 +377,66 @@ CREATE TRIGGER update_track_variants_updated_at
   BEFORE UPDATE ON track_variants
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================
+-- v8: Track Groups / Linked Track Rows
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS track_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL DEFAULT '',
+  canonical_track_id UUID REFERENCES tracks(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS track_group_members (
+  track_group_id UUID NOT NULL REFERENCES track_groups(id) ON DELETE CASCADE,
+  track_id UUID NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL DEFAULT 0,
+  linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (track_group_id, track_id),
+  UNIQUE (track_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_track_group_members_group ON track_group_members(track_group_id, position);
+CREATE INDEX IF NOT EXISTS idx_track_group_members_track ON track_group_members(track_id);
+CREATE INDEX IF NOT EXISTS idx_track_groups_canonical_track_id ON track_groups(canonical_track_id);
+
+DROP TRIGGER IF EXISTS update_track_groups_updated_at ON track_groups;
+CREATE TRIGGER update_track_groups_updated_at
+  BEFORE UPDATE ON track_groups
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================
+-- v9: Learning Resources (Learn/Play feature)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS track_learning_resources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  track_id UUID NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('guitar-tabs', 'guitar-chords', 'piano-keys', 'sheet-music', 'tutorial')),
+  title TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  url TEXT NOT NULL,
+  snippet TEXT,
+  confidence TEXT CHECK (confidence IN ('high', 'medium', 'low')),
+  is_saved BOOLEAN NOT NULL DEFAULT false,
+  search_query TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_learning_resources_track ON track_learning_resources(track_id);
+CREATE INDEX IF NOT EXISTS idx_learning_resources_saved ON track_learning_resources(track_id, is_saved) WHERE is_saved = true;
+CREATE INDEX IF NOT EXISTS idx_learning_resources_type ON track_learning_resources(track_id, resource_type);
+
+DROP TRIGGER IF EXISTS update_learning_resources_updated_at ON track_learning_resources;
+CREATE TRIGGER update_learning_resources_updated_at
+  BEFORE UPDATE ON track_learning_resources
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
 `;
 
 /**
@@ -412,6 +472,63 @@ WHERE NOT EXISTS (
 `;
 
 /**
+ * Backfill linked track groups using only high-confidence matches.
+ *
+ * Safety strategy: auto-link ONLY tracks that resolve to the exact same
+ * non-unknown YouTube video ID. This keeps false positives low and avoids
+ * uncertain title/artist-based silent merges.
+ */
+const BACKFILL_TRACK_GROUPS = `
+WITH duplicate_video_sets AS (
+  SELECT
+    tv.video_id,
+    ARRAY_AGG(DISTINCT tv.track_id ORDER BY tv.track_id) AS track_ids
+  FROM track_variants tv
+  WHERE tv.video_id IS NOT NULL
+    AND tv.video_id <> ''
+    AND tv.video_id NOT LIKE 'unknown-%'
+  GROUP BY tv.video_id
+  HAVING COUNT(DISTINCT tv.track_id) > 1
+),
+to_create AS (
+  SELECT
+    gen_random_uuid() AS group_id,
+    d.video_id,
+    ARRAY(
+      SELECT tid
+      FROM unnest(d.track_ids) AS tid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM track_group_members gm WHERE gm.track_id = tid
+      )
+    ) AS free_track_ids
+  FROM duplicate_video_sets d
+),
+inserted_groups AS (
+  INSERT INTO track_groups (id, name, canonical_track_id, created_at, updated_at)
+  SELECT
+    tc.group_id,
+    'Auto-linked duplicate video: ' || tc.video_id,
+    tc.free_track_ids[1],
+    now(),
+    now()
+  FROM to_create tc
+  WHERE cardinality(tc.free_track_ids) > 1
+  ON CONFLICT (id) DO NOTHING
+  RETURNING id
+)
+INSERT INTO track_group_members (track_group_id, track_id, position, linked_at)
+SELECT
+  tc.group_id,
+  m.track_id,
+  m.ordinality - 1,
+  now()
+FROM to_create tc
+JOIN inserted_groups ig ON ig.id = tc.group_id
+CROSS JOIN LATERAL unnest(tc.free_track_ids) WITH ORDINALITY AS m(track_id, ordinality)
+ON CONFLICT (track_id) DO NOTHING;
+`;
+
+/**
  * Run the full idempotent schema DDL.
  * Returns true if successful, false if something went wrong.
  */
@@ -421,6 +538,8 @@ export async function ensureSchema(): Promise<boolean> {
     await pool.query(SCHEMA_DDL);
     // Backfill variants for existing tracks
     await pool.query(BACKFILL_VARIANTS);
+    // Backfill conservative high-confidence link groups
+    await pool.query(BACKFILL_TRACK_GROUPS);
     return true;
   } catch (err) {
     console.error('[migrate] Schema migration failed:', err);

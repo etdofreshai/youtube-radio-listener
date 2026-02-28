@@ -3,6 +3,7 @@ import type {
   PaginatedResponse, SortableTrackField, SortDirection, SchedulerStatus,
   PaginatedEvents, PlaySession, SessionState, SessionMember, SessionFull,
   YouTubeSearchResponse, TrackVariant, CreateVariantInput, UpdateVariantInput,
+  LinkTrackInput, LinkedTrackSummary, TrackGroup,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL || '';
@@ -156,6 +157,29 @@ export const setPreferredVariant = (trackId: string, variantId: string) =>
 export const createTrackForceNew = (data: CreateTrackInput) =>
   request<Track>('/api/tracks?forceCreate=true', { method: 'POST', body: JSON.stringify(data) });
 
+// ---------- Track Links / Groups ----------
+
+export const getTrackLinks = (trackId: string) =>
+  request<{ trackId: string; trackGroupId: string | null; group?: TrackGroup; linkedTracks: LinkedTrackSummary[] }>(`/api/tracks/${trackId}/links`);
+
+export const linkTrack = (trackId: string, data: LinkTrackInput) =>
+  request<{ track: Track; group: TrackGroup }>(`/api/tracks/${trackId}/links`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const unlinkTrack = (trackId: string, targetTrackId: string) =>
+  request<void>(`/api/tracks/${trackId}/links/${targetTrackId}`, { method: 'DELETE' });
+
+export const setPreferredLinkedTrack = (trackId: string, preferredTrackId: string) =>
+  request<TrackGroup>(`/api/tracks/${trackId}/links/preferred`, {
+    method: 'POST',
+    body: JSON.stringify({ preferredTrackId }),
+  });
+
+export const getPlaybackSource = (trackId: string) =>
+  request<{ requestedTrackId: string; preferredTrackId: string; track: Track }>(`/api/tracks/${trackId}/playback-source`);
+
 // ---------- Playlists ----------
 
 export const getPlaylists = () => request<Playlist[]>('/api/playlists');
@@ -280,3 +304,33 @@ export const getAlbums = () => request<Album[]>('/api/albums');
 
 export const getAlbumDetail = (idOrSlug: string) =>
   request<Album & { tracks: Track[] }>(`/api/albums/${encodeURIComponent(idOrSlug)}`);
+
+// ---------- Learning Resources (Learn/Play) ----------
+
+import type {
+  LearningResource,
+  LearningResourceGrouped,
+  SearchLearningResourcesResult,
+  CreateLearningResourceInput,
+} from './types';
+
+export const getLearningResources = (trackId: string, refresh = false) =>
+  request<SearchLearningResourcesResult>(`/api/tracks/${trackId}/learn${refresh ? '?refresh=true' : ''}`);
+
+export const getSavedLearningResources = (trackId: string) =>
+  request<LearningResource[]>(`/api/tracks/${trackId}/learn/saved`);
+
+export const addLearningResource = (trackId: string, data: CreateLearningResourceInput) =>
+  request<LearningResource>(`/api/tracks/${trackId}/learn`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const saveLearningResource = (trackId: string, resourceId: string) =>
+  request<LearningResource>(`/api/tracks/${trackId}/learn/${resourceId}/save`, { method: 'POST' });
+
+export const unsaveLearningResource = (trackId: string, resourceId: string) =>
+  request<LearningResource>(`/api/tracks/${trackId}/learn/${resourceId}/save`, { method: 'DELETE' });
+
+export const deleteLearningResource = (trackId: string, resourceId: string) =>
+  request<void>(`/api/tracks/${trackId}/learn/${resourceId}`, { method: 'DELETE' });

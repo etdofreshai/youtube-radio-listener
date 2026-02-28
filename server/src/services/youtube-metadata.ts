@@ -1,8 +1,5 @@
 /**
  * YouTube metadata fetcher — extracts video info via yt-dlp.
- *
- * Reuses the same yt-dlp --dump-json approach as the enrichment pipeline,
- * but exposed as a standalone utility for use at track creation time.
  */
 
 import { execFile } from 'child_process';
@@ -15,12 +12,12 @@ export interface YouTubeVideoInfo {
   videoTitle: string;
   channel: string | null;
   channelId: string | null;
-  uploadDate: string | null;   // YYYY-MM-DD
+  uploadDate: string | null;
   description: string | null;
   thumbnailUrl: string | null;
   viewCount: number | null;
   likeCount: number | null;
-  duration: number | null;     // seconds
+  duration: number | null;
   album: string | null;
   genre: string | null;
   releaseYear: number | null;
@@ -32,7 +29,45 @@ export interface ParsedTrackInfo {
   artist: string;
 }
 
-// Known "noise" suffixes to strip from YouTube titles
+export type YouTubeUrlKind = 'video' | 'playlist' | 'invalid';
+
+export interface YouTubeUrlAnalysis {
+  kind: YouTubeUrlKind;
+  inputUrl: string;
+  normalizedUrl: string | null;
+  videoId: string | null;
+  playlistId: string | null;
+  hasVideo: boolean;
+  hasPlaylist: boolean;
+}
+
+export interface YouTubePlaylistItem {
+  videoId: string;
+  youtubeUrl: string;
+  title: string;
+  channel: string | null;
+  position: number;
+}
+
+export interface YouTubePlaylistInfo {
+  sourceUrl: string;
+  playlistId: string | null;
+  playlistTitle: string | null;
+  totalAvailable: number;
+  truncated: boolean;
+  limit: number;
+  items: YouTubePlaylistItem[];
+}
+
+const VALID_YOUTUBE_HOSTS = [
+  'www.youtube.com',
+  'youtube.com',
+  'm.youtube.com',
+  'youtu.be',
+  'music.youtube.com',
+  'www.youtube-nocookie.com',
+] as const;
+
 const NOISE_PATTERNS = [
   /\s*[\(\[]\s*(?:official\s+)?(?:music\s+)?video\s*[\)\]]/gi,
   /\s*[\(\[]\s*(?:official\s+)?audio\s*[\)\]]/gi,
@@ -44,25 +79,14 @@ const NOISE_PATTERNS = [
   /\s*\|\s*official\s+.*$/gi,
 ];
 
-/**
- * Heuristically parse "Artist - Title" from a YouTube video title + channel.
- *
- * Common patterns:
- *   "Artist - Title"
- *   "Artist — Title"
- *   "Artist : Title"
- *   "Title" (channel used as artist)
- */
 export function parseArtistTitle(videoTitle: string, channel: string | null): ParsedTrackInfo {
   let cleaned = videoTitle.trim();
 
-  // Strip known noise
   for (const pattern of NOISE_PATTERNS) {
     cleaned = cleaned.replace(pattern, '');
   }
   cleaned = cleaned.trim();
 
-  // Try "Artist - Title" pattern (hyphen, en-dash, em-dash)
   const separators = [' - ', ' – ', ' — ', ' // '];
   for (const sep of separators) {
     const idx = cleaned.indexOf(sep);
@@ -75,11 +99,9 @@ export function parseArtistTitle(videoTitle: string, channel: string | null): Pa
     }
   }
 
-  // Try "Artist: Title" (only if colon is not part of time code like "1:30")
   const colonIdx = cleaned.indexOf(': ');
   if (colonIdx > 2 && colonIdx < cleaned.length - 2) {
     const beforeColon = cleaned.slice(0, colonIdx);
-    // Ensure it's not a time code
     if (!/^\d+$/.test(beforeColon) && !/\d:\d/.test(beforeColon)) {
       const artist = beforeColon.trim();
       const title = cleaned.slice(colonIdx + 2).trim();
@@ -89,46 +111,124 @@ export function parseArtistTitle(videoTitle: string, channel: string | null): Pa
     }
   }
 
-  // No separator found — use channel as artist, video title as title
   return {
     artist: channel || 'Unknown Artist',
     title: cleaned || videoTitle.trim(),
   };
 }
 
-/**
- * Validate that a string looks like a YouTube URL.
- */
 export function isValidYouTubeUrl(url: string): boolean {
+  return analyzeYouTubeUrl(url).kind !== 'invalid';
+}
+
+export function extractYouTubeVideoId(parsed: URL): string | null {
+  if (parsed.hostname === 'youtu.be') {
+    const id = parsed.pathname.split('/').filter(Boolean)[0] || null;
+    return id || null;
+  }
+
+  const fromQuery = parsed.searchParams.get('v');
+  if (fromQuery) return fromQuery;
+
+  const pathMatch = parsed.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/);
+  if (pathMatch?.[1]) return pathMatch[1];
+
+  return null;
+}
+
+export function analyzeYouTubeUrl(inputUrl: string): YouTubeUrlAnalysis {
+  const trimmed = (inputUrl || '').trim();
+
+  if (!trimmed) {
+    return {
+      kind: 'invalid',
+      inputUrl,
+      normalizedUrl: null,
+      videoId: null,
+      playlistId: null,
+      hasVideo: false,
+      hasPlaylist: false,
+    };
+  }
+
   try {
-    const parsed = new URL(url);
-    const validHosts = [
-      'www.youtube.com', 'youtube.com', 'm.youtube.com',
-      'youtu.be', 'music.youtube.com',
-      'www.youtube-nocookie.com',
-    ];
-    return validHosts.includes(parsed.hostname);
+    const parsed = new URL(trimmed);
+
+    if (!VALID_YOUTUBE_HOSTS.includes(parsed.hostname as any)) {
+      return {
+        kind: 'invalid',
+        inputUrl,
+        normalizedUrl: null,
+        videoId: null,
+        playlistId: null,
+        hasVideo: false,
+        hasPlaylist: false,
+      };
+    }
+
+    const playlistId = parsed.searchParams.get('list');
+    const videoId = extractYouTubeVideoId(parsed);
+
+    const hasPlaylist = !!(playlistId && playlistId.trim().length > 0);
+    const hasVideo = !!(videoId && videoId.trim().length > 0);
+
+    if (hasPlaylist) {
+      return {
+        kind: 'playlist',
+        inputUrl,
+        normalizedUrl: `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId!)}`,
+        videoId: videoId || null,
+        playlistId: playlistId || null,
+        hasVideo,
+        hasPlaylist,
+      };
+    }
+
+    if (hasVideo) {
+      return {
+        kind: 'video',
+        inputUrl,
+        normalizedUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId!)}`,
+        videoId: videoId || null,
+        playlistId: null,
+        hasVideo,
+        hasPlaylist,
+      };
+    }
+
+    return {
+      kind: 'invalid',
+      inputUrl,
+      normalizedUrl: null,
+      videoId: null,
+      playlistId: playlistId || null,
+      hasVideo,
+      hasPlaylist,
+    };
   } catch {
-    return false;
+    return {
+      kind: 'invalid',
+      inputUrl,
+      normalizedUrl: null,
+      videoId: null,
+      playlistId: null,
+      hasVideo: false,
+      hasPlaylist: false,
+    };
   }
 }
 
-/** Result from YouTube search via yt-dlp */
 export interface YouTubeSearchResultItem {
   videoId: string;
   title: string;
   channel: string;
   channelId: string | null;
-  duration: number | null;       // seconds
+  duration: number | null;
   thumbnailUrl: string | null;
   viewCount: number | null;
   youtubeUrl: string;
 }
 
-/**
- * Search YouTube videos via yt-dlp flat-playlist search.
- * Returns up to `maxResults` items (default 10, max 20).
- */
 export async function searchYouTube(query: string, maxResults = 10): Promise<YouTubeSearchResultItem[]> {
   if (!query || !query.trim()) {
     throw new Error('Search query is required');
@@ -148,7 +248,6 @@ export async function searchYouTube(query: string, maxResults = 10): Promise<You
     '--no-warnings',
   ], { timeout: 30_000, maxBuffer: 10 * 1024 * 1024 });
 
-  // yt-dlp outputs one JSON object per line
   const lines = stdout.trim().split('\n').filter(Boolean);
   const results: YouTubeSearchResultItem[] = [];
 
@@ -176,20 +275,86 @@ export async function searchYouTube(query: string, maxResults = 10): Promise<You
   return results;
 }
 
-/** Pick the best quality thumbnail from yt-dlp's thumbnail array. */
+export async function fetchYouTubePlaylistItems(
+  youtubeUrl: string,
+  options?: { maxItems?: number },
+): Promise<YouTubePlaylistInfo> {
+  const analysis = analyzeYouTubeUrl(youtubeUrl);
+  if (analysis.kind !== 'playlist') {
+    throw new Error(`Not a YouTube playlist URL: ${youtubeUrl}`);
+  }
+
+  if (!ytDlpAvailable()) {
+    throw new Error('yt-dlp is not available. Cannot fetch YouTube playlist.');
+  }
+
+  const limit = Math.max(1, Math.min(500, options?.maxItems ?? 100));
+
+  const { stdout } = await execFileAsync(ytDlpBin(), [
+    '--dump-single-json',
+    '--flat-playlist',
+    '--skip-download',
+    '--no-warnings',
+    '--playlist-end', String(limit),
+    youtubeUrl,
+  ], { timeout: 60_000, maxBuffer: 25 * 1024 * 1024 });
+
+  const info = JSON.parse(stdout || '{}');
+  const entries = Array.isArray(info.entries) ? info.entries : [];
+
+  const seenVideoIds = new Set<string>();
+  const items: YouTubePlaylistItem[] = [];
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    const videoIdRaw = entry?.id;
+
+    if (typeof videoIdRaw !== 'string' || !videoIdRaw.trim()) continue;
+    const videoId = videoIdRaw.trim();
+
+    if (seenVideoIds.has(videoId)) continue;
+    seenVideoIds.add(videoId);
+
+    items.push({
+      videoId,
+      youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+      title: typeof entry?.title === 'string' ? entry.title : '',
+      channel:
+        typeof entry?.channel === 'string'
+          ? entry.channel
+          : typeof entry?.uploader === 'string'
+            ? entry.uploader
+            : null,
+      position: items.length + 1,
+    });
+  }
+
+  const playlistCount =
+    typeof info.playlist_count === 'number' && info.playlist_count > 0
+      ? info.playlist_count
+      : typeof info.n_entries === 'number' && info.n_entries > 0
+        ? info.n_entries
+        : items.length;
+
+  return {
+    sourceUrl: youtubeUrl,
+    playlistId: analysis.playlistId,
+    playlistTitle: typeof info.title === 'string' ? info.title : null,
+    totalAvailable: playlistCount,
+    truncated: playlistCount > items.length,
+    limit,
+    items,
+  };
+}
+
 function pickBestThumbnail(thumbnails: any): string | null {
   if (!Array.isArray(thumbnails) || thumbnails.length === 0) return null;
-  // Prefer the one with larger width/height
   const sorted = [...thumbnails]
     .filter((t: any) => t.url)
     .sort((a: any, b: any) => (b.width || 0) - (a.width || 0));
   return sorted[0]?.url || thumbnails[0]?.url || null;
 }
 
-/**
- * Fetch video metadata from YouTube via yt-dlp --dump-json.
- * Throws on failure (invalid URL, network issues, etc.).
- */
 export async function fetchYouTubeMetadata(youtubeUrl: string): Promise<YouTubeVideoInfo> {
   if (!isValidYouTubeUrl(youtubeUrl)) {
     throw new Error(`Invalid YouTube URL: ${youtubeUrl}`);

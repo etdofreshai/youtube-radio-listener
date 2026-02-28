@@ -9,12 +9,14 @@ import type {
   Track, Playlist, Favorite,
   Artist, Album, ArtistSummary,
   TrackVariant, CreateVariantInput, UpdateVariantInput, VariantKind,
+  TrackGroup, LinkedTrackSummary,
   PlaySession, SessionMember, SessionState, SessionEvent,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
   AudioStatus, VideoStatus, EnrichmentStatus, FieldConfidence,
   PaginationParams, PaginatedResponse,
   SortableTrackField, SortDirection,
+  LearningResource, CreateLearningResourceInput,
 } from '../types';
 import { trackSlug, artistSlug, albumSlug, slugify } from '../utils/slug';
 
@@ -442,26 +444,388 @@ export async function getVariants(trackId: string): Promise<TrackVariant[]> {
   return getTrackVariants(trackId);
 }
 
-/** Populate a track with artists + album info */
+// ============================================================
+// Track Groups / Links Helpers
+// ============================================================
+
+function rowToLinkedTrackSummary(row: any): LinkedTrackSummary {
+  return {
+    id: row.id,
+    title: row.title,
+    artist: row.artist,
+    youtubeUrl: row.youtube_url,
+    isLiveStream: row.is_live_stream ?? false,
+    trackGroupId: row.track_group_id || null,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+function rowToTrackGroup(row: any, trackIds: string[]): TrackGroup {
+  return {
+    id: row.id,
+    name: row.name || '',
+    canonicalTrackId: row.canonical_track_id || null,
+    trackIds,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+async function getTrackGroupMapBatch(trackIds: string[]): Promise<Map<string, string>> {
+  if (trackIds.length === 0) return new Map();
+
+  const pool = getPool();
+  const { rows } = await pool.query(
+                                                            `SELECT track_id, track_group_id FROM track_group_members WHERE track_id = ANY($1)`,
+    [trackIds],
+  );
+
+  const map = new Map<string, string>();
+  for (const r of rows) map.set(r.track_id, r.track_group_id);
+  return map;
+}
+
+async function getLinkedTracksBatch(trackIds: string[]): Promise<{
+  groupIdByTrack: Map<string, string | null>;
+  linkedByTrack: Map<string, LinkedTrackSummary[]>;
+}> {
+  const groupMapRaw = await getTrackGroupMapBatch(trackIds);
+
+  const groupIdByTrack = new Map<string, string | null>();
+  for (const id of trackIds) groupIdByTrack.set(id, groupMapRaw.get(id) || null);
+
+  const groupIds = [...new Set(Array.from(groupMapRaw.values()))];
+  if (groupIds.length === 0) {
+    return { groupIdByTrack, linkedByTrack: new Map() };
+  }
+
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT gm.track_group_id, t.id, t.title, t.artist, t.youtube_url, t.is_live_stream, t.created_at
+    FROM track_group_members gm
+    JOIN tracks t ON t.id = gm.track_id
+    WHERE gm.track_group_id = ANY($1)
+    ORDER BY gm.track_group_id, gm.position ASC, t.created_at ASC
+  `, [groupIds]);
+
+  const byGroup = new Map<string, LinkedTrackSummary[]>();
+  for (const r of rows) {
+    const list = byGroup.get(r.track_group_id) || [];
+    list.push(rowToLinkedTrackSummary({ ...r, track_group_id: r.track_group_id }));
+    byGroup.set(r.track_group_id, list);
+  }
+
+  const linkedByTrack = new Map<string, LinkedTrackSummary[]>();
+  for (const trackId of trackIds) {
+    const groupId = groupIdByTrack.get(trackId);
+    if (!groupId) {
+      linkedByTrack.set(trackId, []);
+      continue;
+    }
+    const members = byGroup.get(groupId) || [];
+    linkedByTrack.set(trackId, members.filter(m => m.id !== trackId));
+  }
+
+  return { groupIdByTrack, linkedByTrack };
+}
+
+async function getTrackGroupId(trackId: string, client?: any): Promise<string | null> {
+  const db = client || getPool();
+  const { rows } = await db.query(
+    `SELECT track_group_id FROM track_group_members WHERE track_id = $1`,
+    [trackId],
+  );
+  return rows.length > 0 ? rows[0].track_group_id : null;
+}
+
+async function getTrackGroupById(groupId: string, client?: any): Promise<TrackGroup | undefined> {
+  const db = client || getPool();
+  const groupRes = await db.query(`SELECT * FROM track_groups WHERE id = $1`, [groupId]);
+  if (groupRes.rows.length === 0) return undefined;
+
+  const membersRes = await db.query(
+    `SELECT track_id FROM track_group_members WHERE track_group_id = $1 ORDER BY position ASC, linked_at ASC`,
+    [groupId],
+  );
+
+  return rowToTrackGroup(groupRes.rows[0], membersRes.rows.map((r: any) => r.track_id));
+}
+
+/** Get the track group for a track id. */
+export async function getTrackGroup(trackId: string): Promise<TrackGroup | undefined> {
+  const groupId = await getTrackGroupId(trackId);
+  if (!groupId) return undefined;
+  return getTrackGroupById(groupId);
+}
+
+/** Get linked tracks for a given track id. */
+export async function getLinkedTracks(trackId: string): Promise<LinkedTrackSummary[]> {
+  const { linkedByTrack } = await getLinkedTracksBatch([trackId]);
+  return linkedByTrack.get(trackId) || [];
+}
+
+/** Link two tracks (creates/extends/merges groups as needed). */
+export async function linkTracks(trackId: string, targetTrackId: string, groupName?: string): Promise<TrackGroup> {
+  if (trackId === targetTrackId) throw new Error('Cannot link a track to itself');
+
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const trackCheck = await client.query(
+      `SELECT id FROM tracks WHERE id = ANY($1)`,
+      [[trackId, targetTrackId]],
+    );
+    if (trackCheck.rows.length < 2) {
+      throw new Error('One or more tracks not found');
+    }
+
+    const aGroup = await getTrackGroupId(trackId, client);
+    const bGroup = await getTrackGroupId(targetTrackId, client);
+
+    let finalGroupId: string;
+
+    if (!aGroup && !bGroup) {
+      finalGroupId = uuidv4();
+      await client.query(
+        `INSERT INTO track_groups (id, name, canonical_track_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())`,
+        [finalGroupId, groupName || '', trackId],
+      );
+      await client.query(
+        `INSERT INTO track_group_members (track_group_id, track_id, position)
+         VALUES ($1, $2, 0), ($1, $3, 1)`,
+        [finalGroupId, trackId, targetTrackId],
+      );
+    } else if (aGroup && !bGroup) {
+      finalGroupId = aGroup as string;
+      const posRes = await client.query(
+        `SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM track_group_members WHERE track_group_id = $1`,
+        [finalGroupId],
+      );
+      await client.query(
+        `INSERT INTO track_group_members (track_group_id, track_id, position)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (track_id) DO UPDATE
+         SET track_group_id = EXCLUDED.track_group_id,
+             position = EXCLUDED.position`,
+        [finalGroupId, targetTrackId, posRes.rows[0].next_pos],
+      );
+      if (groupName) {
+        await client.query(`UPDATE track_groups SET name = $2 WHERE id = $1`, [finalGroupId, groupName]);
+      }
+    } else if (!aGroup && bGroup) {
+      finalGroupId = bGroup;
+      const posRes = await client.query(
+        `SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM track_group_members WHERE track_group_id = $1`,
+        [finalGroupId],
+      );
+      await client.query(
+        `INSERT INTO track_group_members (track_group_id, track_id, position)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (track_id) DO UPDATE
+         SET track_group_id = EXCLUDED.track_group_id,
+             position = EXCLUDED.position`,
+        [finalGroupId, trackId, posRes.rows[0].next_pos],
+      );
+      if (groupName) {
+        await client.query(`UPDATE track_groups SET name = $2 WHERE id = $1`, [finalGroupId, groupName]);
+      }
+    } else if (aGroup === bGroup) {
+      finalGroupId = aGroup as string;
+      if (groupName) {
+        await client.query(`UPDATE track_groups SET name = $2 WHERE id = $1`, [finalGroupId, groupName]);
+      }
+    } else {
+      // Merge bGroup into aGroup to keep operations deterministic.
+      finalGroupId = aGroup as string;
+      const sourceGroupId = bGroup as string;
+
+      const posRes = await client.query(
+        `SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM track_group_members WHERE track_group_id = $1`,
+        [finalGroupId],
+      );
+      let nextPos = posRes.rows[0].next_pos;
+
+      const sourceMembers = await client.query(
+        `SELECT track_id FROM track_group_members WHERE track_group_id = $1 ORDER BY position ASC, linked_at ASC`,
+        [sourceGroupId],
+      );
+
+      for (const row of sourceMembers.rows) {
+        await client.query(
+          `UPDATE track_group_members SET track_group_id = $1, position = $2 WHERE track_id = $3`,
+          [finalGroupId, nextPos, row.track_id],
+        );
+        nextPos += 1;
+      }
+
+      await client.query(`DELETE FROM track_groups WHERE id = $1`, [sourceGroupId]);
+      if (groupName) {
+        await client.query(`UPDATE track_groups SET name = $2 WHERE id = $1`, [finalGroupId, groupName]);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    const group = await getTrackGroupById(finalGroupId);
+    if (!group) throw new Error('Failed to load linked track group');
+    return group;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Unlink targetTrackId from the same group as trackId. */
+export async function unlinkTracks(trackId: string, targetTrackId: string): Promise<boolean> {
+  if (trackId === targetTrackId) return false;
+
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const aGroup = await getTrackGroupId(trackId, client);
+    const bGroup = await getTrackGroupId(targetTrackId, client);
+
+    if (!aGroup || !bGroup || aGroup !== bGroup) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+
+    const { rowCount } = await client.query(
+      `DELETE FROM track_group_members WHERE track_group_id = $1 AND track_id = $2`,
+      [aGroup, targetTrackId],
+    );
+
+    if ((rowCount ?? 0) === 0) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+
+    const remainingRes = await client.query(
+      `SELECT track_id FROM track_group_members WHERE track_group_id = $1 ORDER BY position ASC, linked_at ASC`,
+      [aGroup],
+    );
+
+    if (remainingRes.rows.length < 2) {
+      // dissolve singleton groups
+      await client.query(`DELETE FROM track_group_members WHERE track_group_id = $1`, [aGroup]);
+      await client.query(`DELETE FROM track_groups WHERE id = $1`, [aGroup]);
+    } else {
+      const canonicalRes = await client.query(`SELECT canonical_track_id FROM track_groups WHERE id = $1`, [aGroup]);
+      const canonicalTrackId = canonicalRes.rows[0]?.canonical_track_id || null;
+      const stillHasCanonical = canonicalTrackId
+        ? remainingRes.rows.some((r: any) => r.track_id === canonicalTrackId)
+        : false;
+
+      if (!stillHasCanonical) {
+        await client.query(`UPDATE track_groups SET canonical_track_id = $2 WHERE id = $1`, [aGroup, remainingRes.rows[0].track_id]);
+      }
+    }
+
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Set the canonical (preferred playback source) track for a track's group. */
+export async function setPreferredLinkedTrack(trackId: string, preferredTrackId: string): Promise<TrackGroup | null> {
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const groupId = await getTrackGroupId(trackId, client);
+    if (!groupId) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const inGroup = await client.query(
+      `SELECT 1 FROM track_group_members WHERE track_group_id = $1 AND track_id = $2`,
+      [groupId, preferredTrackId],
+    );
+    if (inGroup.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    await client.query(
+      `UPDATE track_groups SET canonical_track_id = $2, updated_at = now() WHERE id = $1`,
+      [groupId, preferredTrackId],
+    );
+
+    await client.query('COMMIT');
+    return (await getTrackGroupById(groupId)) ?? null;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Resolve preferred playback source for a track, honoring group canonical when present. */
+export async function getPreferredPlaybackTrack(trackId: string): Promise<Track | null> {
+  const group = await getTrackGroup(trackId);
+
+  if (!group || !group.canonicalTrackId) {
+    const track = await getTrack(trackId);
+    return track || null;
+  }
+
+  const preferred = await getTrack(group.canonicalTrackId);
+  if (preferred) return preferred;
+
+  const fallbackTrackId = group.trackIds[0] || trackId;
+  const fallback = await getTrack(fallbackTrackId);
+  return fallback || null;
+}
+
+/** Populate a track with artists + album info + variants + links */
 async function populateTrack(track: Track): Promise<Track> {
-  const [artists, albumInfo, variants] = await Promise.all([
+  const [artists, albumInfo, variants, linkedBatch] = await Promise.all([
     getTrackArtists(track.id),
     getTrackAlbumInfo(track.albumId),
     getTrackVariants(track.id),
+    getLinkedTracksBatch([track.id]),
   ]);
-  return { ...track, artists, ...albumInfo, variants };
+
+  return {
+    ...track,
+    artists,
+    ...albumInfo,
+    variants,
+    trackGroupId: linkedBatch.groupIdByTrack.get(track.id) || null,
+    linkedTracks: linkedBatch.linkedByTrack.get(track.id) || [],
+  };
 }
 
 /** Populate multiple tracks with artists + album info (batch) */
 async function populateTracks(tracks: Track[]): Promise<Track[]> {
   if (tracks.length === 0) return [];
+
   const trackIds = tracks.map(t => t.id);
   const albumIds = tracks.map(t => t.albumId).filter(Boolean) as string[];
 
-  const [artistsMap, albumsMap, variantsMap] = await Promise.all([
+  const [artistsMap, albumsMap, variantsMap, linkedBatch] = await Promise.all([
     getTrackArtistsBatch(trackIds),
     getTrackAlbumInfoBatch(albumIds),
     getTrackVariantsBatch(trackIds),
+    getLinkedTracksBatch(trackIds),
   ]);
 
   return tracks.map(t => ({
@@ -470,6 +834,8 @@ async function populateTracks(tracks: Track[]): Promise<Track[]> {
     albumName: t.albumId ? albumsMap.get(t.albumId)?.albumName || null : null,
     albumSlug: t.albumId ? albumsMap.get(t.albumId)?.albumSlug || null : null,
     variants: variantsMap.get(t.id) || [],
+    trackGroupId: linkedBatch.groupIdByTrack.get(t.id) || null,
+    linkedTracks: linkedBatch.linkedByTrack.get(t.id) || [],
   }));
 }
 
@@ -1641,4 +2007,135 @@ export async function getUserSessions(userId: string): Promise<PlaySession[]> {
     ORDER BY ps.updated_at DESC
   `, [userId]);
   return rows.map(rowToSession);
+}
+
+// ============================================================
+// Learning Resources
+// ============================================================
+
+function rowToLearningResource(row: any): LearningResource {
+  return {
+    id: row.id,
+    trackId: row.track_id,
+    resourceType: row.resource_type,
+    title: row.title,
+    provider: row.provider,
+    url: row.url,
+    snippet: row.snippet || null,
+    confidence: row.confidence || null,
+    isSaved: row.is_saved ?? false,
+    searchQuery: row.search_query || null,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+/** Get all learning resources for a track */
+export async function getLearningResources(trackId: string): Promise<LearningResource[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM track_learning_resources WHERE track_id = $1 ORDER BY is_saved DESC, confidence, created_at DESC`,
+    [trackId]
+  );
+  return rows.map(rowToLearningResource);
+}
+
+/** Get cached learning resources for a track (unsaved, from recent searches) */
+export async function getCachedLearningResources(trackId: string): Promise<LearningResource[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM track_learning_resources WHERE track_id = $1 AND is_saved = false ORDER BY confidence, created_at DESC`,
+    [trackId]
+  );
+  return rows.map(rowToLearningResource);
+}
+
+/** Get saved learning resources for a track */
+export async function getSavedLearningResources(trackId: string): Promise<LearningResource[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM track_learning_resources WHERE track_id = $1 AND is_saved = true ORDER BY created_at DESC`,
+    [trackId]
+  );
+  return rows.map(rowToLearningResource);
+}
+
+/** Create multiple learning resources (batch insert) */
+export async function createLearningResources(
+  trackId: string,
+  resources: Omit<LearningResource, 'id' | 'trackId' | 'createdAt' | 'updatedAt' | 'searchQuery'>[],
+  searchQuery: string
+): Promise<LearningResource[]> {
+  const pool = getPool();
+  const now = new Date().toISOString();
+  const created: LearningResource[] = [];
+
+  for (const r of resources) {
+    const id = uuidv4();
+    const { rows } = await pool.query(`
+      INSERT INTO track_learning_resources (id, track_id, resource_type, title, provider, url, snippet, confidence, is_saved, search_query, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+      RETURNING *
+    `, [id, trackId, r.resourceType, r.title, r.provider, r.url, r.snippet, r.confidence, r.isSaved ?? false, searchQuery, now]);
+    created.push(rowToLearningResource(rows[0]));
+  }
+
+  return created;
+}
+
+/** Create a single learning resource (for manual add) */
+export async function createLearningResource(
+  trackId: string,
+  input: CreateLearningResourceInput
+): Promise<LearningResource> {
+  const pool = getPool();
+  const id = uuidv4();
+  const now = new Date().toISOString();
+
+  const { rows } = await pool.query(`
+    INSERT INTO track_learning_resources (id, track_id, resource_type, title, provider, url, snippet, confidence, is_saved, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $9)
+    RETURNING *
+  `, [id, trackId, input.resourceType, input.title, input.provider, input.url, input.snippet || null, input.confidence || null, now]);
+
+  return rowToLearningResource(rows[0]);
+}
+
+/** Save/bookmark a learning resource */
+export async function saveLearningResource(trackId: string, resourceId: string): Promise<LearningResource | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE track_learning_resources SET is_saved = true, updated_at = now() WHERE id = $1 AND track_id = $2 RETURNING *`,
+    [resourceId, trackId]
+  );
+  return rows.length > 0 ? rowToLearningResource(rows[0]) : null;
+}
+
+/** Unsave/remove bookmark from a learning resource */
+export async function unsaveLearningResource(trackId: string, resourceId: string): Promise<LearningResource | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE track_learning_resources SET is_saved = false, updated_at = now() WHERE id = $1 AND track_id = $2 RETURNING *`,
+    [resourceId, trackId]
+  );
+  return rows.length > 0 ? rowToLearningResource(rows[0]) : null;
+}
+
+/** Delete a learning resource */
+export async function deleteLearningResource(trackId: string, resourceId: string): Promise<boolean> {
+  const pool = getPool();
+  const { rowCount } = await pool.query(
+    `DELETE FROM track_learning_resources WHERE id = $1 AND track_id = $2`,
+    [resourceId, trackId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Clear cached (unsaved) learning resources for a track */
+export async function clearCachedLearningResources(trackId: string): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `DELETE FROM track_learning_resources WHERE track_id = $1 AND is_saved = false`,
+    [trackId]
+  );
 }

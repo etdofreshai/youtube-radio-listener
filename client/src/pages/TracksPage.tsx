@@ -4,6 +4,7 @@ import type { Track, CreateTrackInput, UpdateTrackInput, SortableTrackField, Sor
 import * as api from '../api';
 import TrackForm from '../components/TrackForm';
 import YouTubeSearch from '../components/YouTubeSearch';
+import LearnPanel from '../components/LearnPanel';
 import { useAudioPlayer } from '../components/AudioPlayer';
 import { parseEndTime } from '../utils/endTimeParse';
 import { getEffectiveDuration, getEffectiveDurationFromStrings } from '../utils/effectiveDuration';
@@ -116,6 +117,7 @@ export default function TracksPage() {
   const [searchInput, setSearchInput] = useState('');
   const [showYtSearch, setShowYtSearch] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [learnTrackId, setLearnTrackId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -448,6 +450,10 @@ export default function TracksPage() {
               <span className="action-menu-icon">🔍</span>
               {isEnriching ? 'Enriching…' : 'Enrich'}
             </button>
+            <button className="action-menu-item" onClick={() => { setLearnTrackId(track.id); setOpenMenuId(null); }}>
+              <span className="action-menu-icon">🎸</span>
+              Learn
+            </button>
             {!track.isLiveStream && track.audioStatus === 'ready' && (
               <button className="action-menu-item" onClick={() => handleRefresh(track.id)}>
                 <span className="action-menu-icon">🔄</span> Re-download
@@ -621,6 +627,169 @@ export default function TracksPage() {
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  function TrackLinksSection({ track, onUpdated }: { track: Track; onUpdated: () => void }) {
+    const [targetTrackId, setTargetTrackId] = useState('');
+    const [groupName, setGroupName] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [linkError, setLinkError] = useState('');
+    const [preferredTrackId, setPreferredTrackId] = useState<string>(track.id);
+
+    const linked = track.linkedTracks || [];
+    const candidateTracks = tracks.filter(t =>
+      t.id !== track.id &&
+      !linked.some(l => l.id === t.id)
+    );
+
+    const refreshPreferred = useCallback(async () => {
+      try {
+        const linkInfo = await api.getTrackLinks(track.id);
+        setPreferredTrackId(linkInfo.group?.canonicalTrackId || track.id);
+      } catch {
+        setPreferredTrackId(track.id);
+      }
+    }, [track.id]);
+
+    useEffect(() => {
+      refreshPreferred();
+    }, [refreshPreferred]);
+
+    const handleLink = async () => {
+      if (!targetTrackId) return;
+      setBusy(true);
+      setLinkError('');
+      try {
+        await api.linkTrack(track.id, {
+          targetTrackId,
+          groupName: groupName.trim() || undefined,
+        });
+        setTargetTrackId('');
+        setGroupName('');
+        await refreshPreferred();
+        onUpdated();
+      } catch (err: unknown) {
+        setLinkError(err instanceof Error ? err.message : 'Failed to link tracks');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const handleUnlink = async (linkedTrackId: string) => {
+      if (!confirm('Unlink this track?')) return;
+      setBusy(true);
+      setLinkError('');
+      try {
+        await api.unlinkTrack(track.id, linkedTrackId);
+        await refreshPreferred();
+        onUpdated();
+      } catch (err: unknown) {
+        setLinkError(err instanceof Error ? err.message : 'Failed to unlink track');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const handlePrefer = async (id: string) => {
+      setBusy(true);
+      setLinkError('');
+      try {
+        await api.setPreferredLinkedTrack(track.id, id);
+        setPreferredTrackId(id);
+        onUpdated();
+      } catch (err: unknown) {
+        setLinkError(err instanceof Error ? err.message : 'Failed to set preferred playback source');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    return (
+      <div className="track-variants-section" style={{ marginTop: 12 }}>
+        <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          🧷 Linked Tracks ({linked.length})
+          {track.trackGroupId && (
+            <span className="variant-kind-badge" title="Track group id">Group: {track.trackGroupId.slice(0, 8)}</span>
+          )}
+        </h4>
+
+        <div className="variant-add-form">
+          <select
+            value={targetTrackId}
+            onChange={e => setTargetTrackId(e.target.value)}
+            style={{ minWidth: 260 }}
+          >
+            <option value="">Select track to link…</option>
+            {candidateTracks.map(t => (
+              <option key={t.id} value={t.id}>{t.artist} — {t.title}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={groupName}
+            onChange={e => setGroupName(e.target.value)}
+            placeholder="Group label (optional)"
+            style={{ width: 180 }}
+          />
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleLink}
+            disabled={!targetTrackId || busy}
+            title="Link selected track"
+          >
+            {busy ? '⏳' : 'Link'}
+          </button>
+        </div>
+
+        {linkError && <div style={{ color: 'var(--danger)', fontSize: '0.82rem', marginBottom: 8 }}>{linkError}</div>}
+
+        {linked.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No linked tracks yet.</div>
+        ) : (
+          <div className="variants-list">
+            <div className="variant-row">
+              <span className="variant-kind-badge">🎯 This track</span>
+              <span>{track.artist} — {track.title}</span>
+              {preferredTrackId === track.id ? (
+                <span className="variant-active-badge">★ Preferred</span>
+              ) : (
+                <button className="btn btn-sm btn-secondary" onClick={() => handlePrefer(track.id)} disabled={busy}>Prefer</button>
+              )}
+            </div>
+
+            {linked.map(l => (
+              <div key={l.id} className="variant-row">
+                <span className="variant-kind-badge">{l.isLiveStream ? '📡 Live' : '🎵 Track'}</span>
+                <span>{l.artist} — {l.title}</span>
+                <a href={l.youtubeUrl} target="_blank" rel="noopener" className="variant-url" title={l.youtubeUrl}>
+                  Open ↗
+                </a>
+                {preferredTrackId === l.id ? (
+                  <span className="variant-active-badge">★ Preferred</span>
+                ) : (
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => handlePrefer(l.id)}
+                    disabled={busy}
+                    title="Use this track as preferred playback source"
+                  >
+                    Prefer
+                  </button>
+                )}
+                <button
+                  className="btn-icon btn-sm"
+                  onClick={() => handleUnlink(l.id)}
+                  title="Unlink"
+                  style={{ color: 'var(--danger)' }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -806,6 +975,9 @@ export default function TracksPage() {
             )}
           </div>
         </div>
+
+        {/* Linked tracks section */}
+        <TrackLinksSection track={track} onUpdated={load} />
 
         {/* Variants section */}
         {track.variants && track.variants.length > 0 && (
@@ -1199,6 +1371,17 @@ export default function TracksPage() {
               initial={editing ?? undefined}
               onSubmit={editing ? handleUpdate : handleCreate}
               onCancel={() => { setShowForm(false); setEditing(null); }}
+            />
+          </div>
+        </div>
+      )}
+
+      {learnTrackId && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setLearnTrackId(null); }}>
+          <div className="modal modal-lg">
+            <LearnPanel
+              track={tracks.find(t => t.id === learnTrackId)!}
+              onClose={() => setLearnTrackId(null)}
             />
           </div>
         </div>

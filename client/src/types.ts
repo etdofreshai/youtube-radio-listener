@@ -123,6 +123,8 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   albumName?: string | null;
   albumSlug?: string | null;
   variants?: TrackVariant[];
+  trackGroupId?: string | null;
+  linkedTracks?: LinkedTrackSummary[];
 }
 
 // ---------- Track Variant ----------
@@ -166,6 +168,83 @@ export interface UpdateVariantInput {
   label?: string;
   isPreferred?: boolean;
   metadata?: Record<string, any>;
+}
+
+// ---------- Track Linking / Grouping ----------
+
+export interface LinkedTrackSummary {
+  id: string;
+  title: string;
+  artist: string;
+  youtubeUrl: string;
+  isLiveStream: boolean;
+  trackGroupId: string | null;
+  createdAt: string;
+}
+
+export interface TrackGroup {
+  id: string;
+  name: string;
+  canonicalTrackId: string | null;
+  trackIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LinkTrackInput {
+  targetTrackId: string;
+  groupName?: string;
+}
+
+// ---------- Learning Resources (Learn/Play) ----------
+
+export type LearningResourceType =
+  | 'guitar-tabs'
+  | 'guitar-chords'
+  | 'piano-keys'
+  | 'sheet-music'
+  | 'tutorial';
+
+export type LearningResourceConfidence = 'high' | 'medium' | 'low';
+
+export interface LearningResource {
+  id: string;
+  trackId: string;
+  resourceType: LearningResourceType;
+  title: string;
+  provider: string;
+  url: string;
+  snippet: string | null;
+  confidence: LearningResourceConfidence | null;
+  isSaved: boolean;
+  searchQuery: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningResourceGrouped {
+  guitarTabs: LearningResource[];
+  guitarChords: LearningResource[];
+  pianoKeys: LearningResource[];
+  sheetMusic: LearningResource[];
+  tutorials: LearningResource[];
+}
+
+export interface SearchLearningResourcesResult {
+  trackId: string;
+  searchQuery: string;
+  cached: boolean;
+  searchedAt: string;
+  resources: LearningResourceGrouped;
+}
+
+export interface CreateLearningResourceInput {
+  resourceType: LearningResourceType;
+  title: string;
+  provider: string;
+  url: string;
+  snippet?: string;
+  confidence?: LearningResourceConfidence;
 }
 
 // ---------- Pagination / Sort ----------

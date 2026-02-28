@@ -3,9 +3,28 @@ import * as store from '../store';
 import { downloadTrackAudio, refreshTrackAudio, downloadTrackVideo, deleteTrackAudio, deleteTrackVideo } from '../downloader';
 import { enrichTrack, enrichTrackSync, enrichAllTracks, listProviders, budgetTracker } from '../services/enrichment';
 import { getSchedulerStatus, forceTick, startScheduler, stopScheduler } from '../services/scheduler';
-import { fetchYouTubeMetadata, parseArtistTitle, isValidYouTubeUrl, searchYouTube } from '../services/youtube-metadata';
+import {
+  fetchYouTubeMetadata,
+  parseArtistTitle,
+  isValidYouTubeUrl,
+  searchYouTube,
+  analyzeYouTubeUrl,
+  fetchYouTubePlaylistItems,
+  type YouTubePlaylistItem,
+} from '../services/youtube-metadata';
+import { importPlaylistTracks } from '../services/playlist-import';
 import { fetchLyrics } from '../services/lyrics';
-import type { CreateTrackInput, UpdateTrackInput, CreateVariantInput, UpdateVariantInput, SortableTrackField, SortDirection } from '../types';
+import type {
+  Track,
+  CreateTrackInput,
+  UpdateTrackInput,
+  CreateVariantInput,
+  UpdateVariantInput,
+  SortableTrackField,
+  SortDirection,
+  LinkTrackInput,
+  SetPreferredLinkedTrackInput,
+} from '../types';
 
 const router = Router();
 
@@ -23,122 +42,35 @@ const SORTABLE_FIELDS: SortableTrackField[] = [
   'duration', 'verified', 'album', 'genre', 'releaseYear',
 ];
 
-// ============================================================
-// Static routes (before /:id to avoid param capture)
-// ============================================================
+const DEFAULT_PLAYLIST_IMPORT_LIMIT = 100;
+const MAX_PLAYLIST_IMPORT_LIMIT = 500;
 
-// GET /api/tracks/enrichment/providers
-router.get('/enrichment/providers', (_req, res) => {
-  res.json(listProviders());
-});
-
-// GET /api/tracks/enrichment/status — scheduler + queue status
-router.get('/enrichment/status', async (_req, res) => {
-  res.json(await getSchedulerStatus());
-});
-
-// POST /api/tracks/enrichment/tick — force a scheduler tick
-router.post('/enrichment/tick', async (_req, res) => {
-  await forceTick();
-  res.json({ message: 'Tick executed', status: await getSchedulerStatus() });
-});
-
-// POST /api/tracks/enrichment/start — start scheduler
-router.post('/enrichment/start', async (_req, res) => {
-  startScheduler();
-  res.json({ message: 'Scheduler started', status: await getSchedulerStatus() });
-});
-
-// POST /api/tracks/enrichment/stop — stop scheduler
-router.post('/enrichment/stop', async (_req, res) => {
-  stopScheduler();
-  res.json({ message: 'Scheduler stopped', status: await getSchedulerStatus() });
-});
-
-// GET /api/tracks/search-youtube?q=...&maxResults=10
-router.get('/search-youtube', async (req, res) => {
-  const q = (req.query.q as string || '').trim();
-  if (!q) {
-    res.status(400).json({ error: 'Query parameter "q" is required' });
-    return;
+function playlistImportLimit(): number {
+  const raw = parseInt(process.env.PLAYLIST_IMPORT_MAX_ITEMS || '', 10);
+  if (Number.isFinite(raw) && raw > 0) {
+    return Math.min(MAX_PLAYLIST_IMPORT_LIMIT, raw);
   }
-  if (q.length > 200) {
-    res.status(400).json({ error: 'Query too long (max 200 characters)' });
-    return;
-  }
+  return DEFAULT_PLAYLIST_IMPORT_LIMIT;
+}
 
-  const maxResults = Math.min(20, Math.max(1, parseInt(req.query.maxResults as string, 10) || 10));
+type TrackCreateOutcome =
+  | { kind: 'created'; track: Track }
+  | { kind: 'response'; status: number; body: Record<string, unknown> };
 
-  try {
-    const results = await searchYouTube(q, maxResults);
-    res.json({ results, query: q });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[tracks] YouTube search failed:', msg);
-    res.status(500).json({ error: 'YouTube search failed', detail: msg });
-  }
-});
+async function createTrackWithPipeline(
+  req: any,
+  input: CreateTrackInput,
+  options?: { detectDuplicates?: boolean; forceCreate?: boolean; linkToTrackId?: string },
+): Promise<TrackCreateOutcome> {
+  const { youtubeUrl, title, artist, artistIds, startTimeSec, endTimeSec, volume, notes } = input;
+  let { isLiveStream } = input;
 
-// POST /api/tracks/enrich-all — batch enqueue
-router.post('/enrich-all', async (req, res) => {
-  const force = req.query.force === 'true';
-  const queued = await enrichAllTracks({ force });
-  res.json({ message: `Queued ${queued} tracks for enrichment`, queued, force });
-});
-
-// ============================================================
-// GET /api/tracks — paginated + sorted
-// ============================================================
-
-router.get('/', async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize as string, 10) || 25));
-
-    let sortBy: SortableTrackField = 'createdAt';
-    if (req.query.sortBy && SORTABLE_FIELDS.includes(req.query.sortBy as SortableTrackField)) {
-      sortBy = req.query.sortBy as SortableTrackField;
-    }
-
-    let sortDir: SortDirection = 'desc';
-    if (req.query.sortDir === 'asc' || req.query.sortDir === 'desc') {
-      sortDir = req.query.sortDir as SortDirection;
-    }
-
-    const search = (req.query.search as string) || undefined;
-    let verified: boolean | undefined;
-    if (req.query.verified === 'true') verified = true;
-    else if (req.query.verified === 'false') verified = false;
-
-    res.json(await store.getTracksPaginated({ page, pageSize, sortBy, sortDir, search, verified }));
-  } catch (err) {
-    console.error('[tracks] GET / error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ============================================================
-// Single track CRUD
-// ============================================================
-
-// GET /api/tracks/:id
-router.get('/:id', async (req, res) => {
-  const track = await store.getTrack(paramId(req.params.id));
-  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
-  res.json(track);
-});
-
-// POST /api/tracks
-router.post('/', async (req, res) => {
-  const { youtubeUrl, title, artist, artistIds, startTimeSec, endTimeSec, volume, notes } = req.body as CreateTrackInput;
-  let { isLiveStream } = req.body as CreateTrackInput;
   if (!youtubeUrl) {
-    res.status(400).json({ error: 'youtubeUrl is required' });
-    return;
+    return { kind: 'response', status: 400, body: { error: 'youtubeUrl is required' } };
   }
+
   if (volume != null && (volume < 0 || volume > 200)) {
-    res.status(400).json({ error: 'volume must be between 0 and 200' });
-    return;
+    return { kind: 'response', status: 400, body: { error: 'volume must be between 0 and 200' } };
   }
 
   // Check for duplicate video ID across existing variants
@@ -147,12 +79,15 @@ router.post('/', async (req, res) => {
     const existingVariant = await store.findVariantByVideoId(videoId);
     if (existingVariant) {
       const existingTrack = await store.getTrack(existingVariant.trackId);
-      res.status(409).json({
-        error: 'This YouTube video already exists as a variant',
-        existingTrack,
-        existingVariant,
-      });
-      return;
+      return {
+        kind: 'response',
+        status: 409,
+        body: {
+          error: 'This YouTube video already exists as a variant',
+          existingTrack,
+          existingVariant,
+        },
+      };
     }
   }
 
@@ -164,8 +99,11 @@ router.post('/', async (req, res) => {
   if (!resolvedTitle || !resolvedArtist) {
     // Need to fetch metadata from YouTube
     if (!isValidYouTubeUrl(youtubeUrl)) {
-      res.status(400).json({ error: 'Invalid YouTube URL. Provide a valid URL or supply title and artist manually.' });
-      return;
+      return {
+        kind: 'response',
+        status: 400,
+        body: { error: 'Invalid YouTube URL. Provide a valid URL or supply title and artist manually.' },
+      };
     }
 
     try {
@@ -183,12 +121,15 @@ router.post('/', async (req, res) => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[tracks] YouTube metadata fetch failed:`, msg);
-      res.status(422).json({
-        error: `Could not extract metadata from YouTube URL. Provide title and artist manually.`,
-        detail: msg,
-      });
-      return;
+      console.error('[tracks] YouTube metadata fetch failed:', msg);
+      return {
+        kind: 'response',
+        status: 422,
+        body: {
+          error: 'Could not extract metadata from YouTube URL. Provide title and artist manually.',
+          detail: msg,
+        },
+      };
     }
   }
 
@@ -202,22 +143,38 @@ router.post('/', async (req, res) => {
     }
   }
 
-  // Canonical identity detection: check if a track with same title+artist exists
-  const detectDuplicates = req.query.detectDuplicates !== 'false';
-  const forceCreate = req.query.forceCreate === 'true';
+  // Canonical identity detection: check if a track with same title+artist exists.
+  // De-duplicate suggestions by trackGroupId to avoid noisy repeats.
+  const detectDuplicates = options?.detectDuplicates ?? true;
+  const forceCreate = options?.forceCreate ?? false;
   if (detectDuplicates && !forceCreate && store.isPostgres()) {
     const matches = await store.findTracksByCanonicalIdentity(resolvedTitle, resolvedArtist);
     if (matches.length > 0) {
-      // Return potential match — let the client decide
-      const matchTrack = await store.getTrack(matches[0].id);
-      res.status(200).json({
-        potentialMatch: matchTrack,
-        resolvedTitle,
-        resolvedArtist,
-        youtubeUrl,
-        message: 'A track with the same title and artist already exists. Add as variant or create new track.',
-      });
-      return;
+      const hydrated = (await Promise.all(matches.map(m => store.getTrack(m.id))))
+        .filter(Boolean) as any[];
+
+      const seen = new Set<string>();
+      const deduped: any[] = [];
+      for (const t of hydrated) {
+        const key = t.trackGroupId || t.id;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(t);
+        }
+      }
+
+      return {
+        kind: 'response',
+        status: 200,
+        body: {
+          potentialMatch: deduped[0] || hydrated[0],
+          potentialMatches: deduped,
+          resolvedTitle,
+          resolvedArtist,
+          youtubeUrl,
+          message: 'A track with the same title and artist already exists. Add as variant, link to existing, or force-create a new standalone track.',
+        },
+      };
     }
   }
 
@@ -232,6 +189,14 @@ router.post('/', async (req, res) => {
     notes,
     isLiveStream: isLiveStream ?? false,
   });
+
+  if (options?.linkToTrackId && store.isPostgres()) {
+    try {
+      await store.linkTracks(track.id, options.linkToTrackId);
+    } catch (err) {
+      console.warn(`[tracks] Could not auto-link new track ${track.id} to ${options.linkToTrackId}:`, err);
+    }
+  }
 
   // Record event
   const userId = getActorId(req);
@@ -252,7 +217,177 @@ router.post('/', async (req, res) => {
   // Auto-enrich via queue (Stage A)
   enrichTrack(track.id);
 
-  res.status(201).json(track);
+  return { kind: 'created', track };
+}
+
+function buildPlaylistTrackInput(base: CreateTrackInput, item: YouTubePlaylistItem): CreateTrackInput {
+  return {
+    youtubeUrl: item.youtubeUrl,
+    title: item.title?.trim() || undefined,
+    artist: item.channel?.trim() || undefined,
+    artistIds: base.artistIds,
+    startTimeSec: base.startTimeSec,
+    endTimeSec: base.endTimeSec,
+    volume: base.volume,
+    notes: base.notes,
+  };
+}
+
+// ============================================================
+// Static routes (before /:id to avoid param capture)
+// ============================================================
+
+// GET /api/tracks/enrichment/providers
+router.get('/enrichment/providers', (_req, res) => {
+  res.json(listProviders());
+});
+
+// GET /api/tracks/enrichment/status — scheduler + queue status
+router.get('/enrichment/status', async (_req, res) => {
+  res.json(await getSchedulerStatus());
+});
+
+// GET /api/tracks/search-youtube?q=...&maxResults=10
+router.get('/search-youtube', async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!q) {
+    res.status(400).json({ error: 'q (query) is required' });
+    return;
+  }
+  if (q.length > 200) {
+    res.status(400).json({ error: 'q (query) is too long (max 200 chars)' });
+    return;
+  }
+
+  const maxResultsRaw = parseInt(String(req.query.maxResults || '10'), 10);
+  const maxResults = Number.isFinite(maxResultsRaw) ? Math.min(Math.max(maxResultsRaw, 1), 20) : 10;
+
+  try {
+    const results = await searchYouTube(q, maxResults);
+    res.json({ query: q, results, maxResults });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg || 'YouTube search failed' });
+  }
+});
+
+// GET /api/tracks (paginated)
+router.get('/', async (req, res) => {
+  const page = Math.max(parseInt(String(req.query.page || '1'), 10) || 1, 1);
+  const pageSize = Math.min(Math.max(parseInt(String(req.query.pageSize || '50'), 10) || 50, 1), 200);
+
+  const sortByRaw = typeof req.query.sortBy === 'string' ? req.query.sortBy : 'createdAt';
+  const sortDirRaw = typeof req.query.sortDir === 'string' ? req.query.sortDir : 'desc';
+
+  const sortBy: SortableTrackField = SORTABLE_FIELDS.includes(sortByRaw as SortableTrackField)
+    ? (sortByRaw as SortableTrackField)
+    : 'createdAt';
+  const sortDir: SortDirection = sortDirRaw === 'asc' ? 'asc' : 'desc';
+
+  const search = typeof req.query.query === 'string'
+    ? req.query.query
+    : typeof req.query.search === 'string'
+      ? req.query.search
+      : undefined;
+
+  const data = await store.getTracksPaginated({ page, pageSize, sortBy, sortDir, search });
+  res.json(data);
+});
+
+// POST /api/tracks
+router.post('/', async (req, res) => {
+  const input = req.body as CreateTrackInput;
+  const youtubeUrl = input.youtubeUrl?.trim();
+
+  if (!youtubeUrl) {
+    res.status(400).json({ error: 'youtubeUrl is required' });
+    return;
+  }
+
+  const detectDuplicates = req.query.detectDuplicates !== 'false';
+  const forceCreate = req.query.forceCreate === 'true';
+  const linkToTrackId = typeof req.query.linkToTrackId === 'string' ? req.query.linkToTrackId : undefined;
+
+  const urlAnalysis = analyzeYouTubeUrl(youtubeUrl);
+  if (urlAnalysis.kind === 'invalid') {
+    const outcome = await createTrackWithPipeline(req, { ...input, youtubeUrl }, {
+      detectDuplicates,
+      forceCreate,
+      linkToTrackId,
+    });
+    if (outcome.kind === 'created') {
+      res.status(201).json(outcome.track);
+    } else {
+      res.status(outcome.status).json(outcome.body);
+    }
+    return;
+  }
+
+  if (urlAnalysis.kind === 'playlist') {
+    const maxItems = playlistImportLimit();
+
+    try {
+      const playlistInfo = await fetchYouTubePlaylistItems(youtubeUrl, { maxItems });
+
+      const importResult = await importPlaylistTracks(playlistInfo, {
+        findExistingByVideoId: async (videoId: string) => store.findVariantByVideoId(videoId),
+        createTrackForItem: async (item: YouTubePlaylistItem) => {
+          const outcome = await createTrackWithPipeline(
+            req,
+            buildPlaylistTrackInput(input, item),
+            {
+              detectDuplicates: false,
+              forceCreate: true,
+              linkToTrackId,
+            },
+          );
+
+          if (outcome.kind !== 'created') {
+            const body = outcome.body as Record<string, unknown>;
+            const detail = typeof body.detail === 'string' ? body.detail : '';
+            const msg = typeof body.error === 'string' ? body.error : 'Failed to create track';
+            throw new Error(detail ? `${msg}: ${detail}` : msg);
+          }
+
+          return outcome.track;
+        },
+      });
+
+      res.status(200).json(importResult);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[tracks] Playlist import failed:', msg);
+      res.status(422).json({
+        error: 'Could not import playlist',
+        detail: msg,
+      });
+      return;
+    }
+  }
+
+  const outcome = await createTrackWithPipeline(req, { ...input, youtubeUrl }, {
+    detectDuplicates,
+    forceCreate,
+    linkToTrackId,
+  });
+
+  if (outcome.kind === 'created') {
+    res.status(201).json(outcome.track);
+  } else {
+    res.status(outcome.status).json(outcome.body);
+  }
+});
+
+// GET /api/tracks/:id
+router.get('/:id', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) {
+    res.status(404).json({ error: 'Track not found' });
+    return;
+  }
+  res.json(track);
 });
 
 // PUT /api/tracks/:id
@@ -502,6 +637,165 @@ router.post('/:id/enrich', async (req, res) => {
 });
 
 // ============================================================
+// Track links / groups
+// ============================================================
+
+// GET /api/tracks/:id/links
+router.get('/:id/links', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Track linking requires PostgreSQL' });
+    return;
+  }
+
+  const linkedTracks = await store.getLinkedTracks(id);
+  const group = await store.getTrackGroup(id);
+  res.json({
+    trackId: id,
+    trackGroupId: group?.id || null,
+    group,
+    linkedTracks,
+  });
+});
+
+// POST /api/tracks/:id/links
+router.post('/:id/links', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Track linking requires PostgreSQL' });
+    return;
+  }
+
+  const body = req.body as LinkTrackInput;
+  const targetTrackId = body.targetTrackId;
+  const groupName = body.groupName;
+
+  if (!targetTrackId) {
+    res.status(400).json({ error: 'targetTrackId is required' });
+    return;
+  }
+
+  try {
+    const group = await store.linkTracks(id, targetTrackId, groupName);
+
+    store.recordEvent('track.linked', {
+      userId: getActorId(req),
+      entityType: 'track',
+      entityId: id,
+      metadata: { targetTrackId, trackGroupId: group.id, groupName: group.name || null },
+    }).catch(() => {});
+
+    // Return fresh track with linkedTracks populated
+    const updated = await store.getTrack(id);
+    res.json({ track: updated, group });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ error: msg || 'Failed to link tracks' });
+  }
+});
+
+// DELETE /api/tracks/:id/links/:targetTrackId
+router.delete('/:id/links/:targetTrackId', async (req, res) => {
+  const id = paramId(req.params.id);
+  const targetTrackId = paramId(req.params.targetTrackId);
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Track linking requires PostgreSQL' });
+    return;
+  }
+
+  try {
+    const removed = await store.unlinkTracks(id, targetTrackId);
+    if (!removed) {
+      res.status(404).json({ error: 'Link not found' });
+      return;
+    }
+
+    store.recordEvent('track.unlinked', {
+      userId: getActorId(req),
+      entityType: 'track',
+      entityId: id,
+      metadata: { targetTrackId },
+    }).catch(() => {});
+
+    res.status(204).send();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ error: msg || 'Failed to unlink tracks' });
+  }
+});
+
+// POST /api/tracks/:id/links/preferred
+router.post('/:id/links/preferred', async (req, res) => {
+  const id = paramId(req.params.id);
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Track linking requires PostgreSQL' });
+    return;
+  }
+
+  const body = req.body as SetPreferredLinkedTrackInput;
+  const preferredTrackId = body.preferredTrackId;
+  if (!preferredTrackId) {
+    res.status(400).json({ error: 'preferredTrackId is required' });
+    return;
+  }
+
+  try {
+    const group = await store.setPreferredLinkedTrack(id, preferredTrackId);
+    if (!group) {
+      res.status(404).json({ error: 'Track group not found or preferred track is not in group' });
+      return;
+    }
+
+    store.recordEvent('track.link_preferred_set', {
+      userId: getActorId(req),
+      entityType: 'track',
+      entityId: id,
+      metadata: { preferredTrackId, trackGroupId: group.id },
+    }).catch(() => {});
+
+    res.json(group);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ error: msg || 'Failed to set preferred linked track' });
+  }
+});
+
+// GET /api/tracks/:id/playback-source
+router.get('/:id/playback-source', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) {
+    res.status(404).json({ error: 'Track not found' });
+    return;
+  }
+
+  if (!store.isPostgres()) {
+    res.json({ requestedTrackId: id, preferredTrackId: id, track });
+    return;
+  }
+
+  const preferred = await store.getPreferredPlaybackTrack(id);
+  if (!preferred) {
+    res.status(404).json({ error: 'Track not found' });
+    return;
+  }
+
+  res.json({
+    requestedTrackId: id,
+    preferredTrackId: preferred.id,
+    track: preferred,
+  });
+});
+
+// ============================================================
 // Variants
 // ============================================================
 
@@ -639,6 +933,182 @@ router.post('/:id/variants/:variantId/prefer', async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: 'Failed to set preferred variant', detail: msg });
+  }
+});
+
+// ============================================================
+// Learning Resources (Learn/Play)
+// ============================================================
+
+import { searchLearningResources } from '../services/learn';
+import type { LearningResource, CreateLearningResourceInput } from '../types';
+
+// GET /api/tracks/:id/learn — get learning resources for a track
+router.get('/:id/learn', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Learning resources require PostgreSQL' });
+    return;
+  }
+
+  const refresh = req.query.refresh === 'true';
+
+  try {
+    // If refresh=true, clear cache first
+    if (refresh) {
+      await store.clearCachedLearningResources(id);
+    }
+
+    const result = await searchLearningResources(id);
+
+    store.recordEvent('track.learn_searched', {
+      userId: getActorId(req),
+      entityType: 'track',
+      entityId: id,
+      metadata: { cached: result.cached, searchQuery: result.searchQuery },
+    }).catch(() => {});
+
+    res.json(result);
+  } catch (err) {
+    console.error(`[tracks] Learn search failed for ${id}:`, err);
+    res.status(500).json({ error: 'Learning resource search failed' });
+  }
+});
+
+// GET /api/tracks/:id/learn/saved — get saved/bookmarked learning resources
+router.get('/:id/learn/saved', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Learning resources require PostgreSQL' });
+    return;
+  }
+
+  const resources = await store.getSavedLearningResources(id);
+  res.json(resources);
+});
+
+// POST /api/tracks/:id/learn — add a manual learning resource
+router.post('/:id/learn', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Learning resources require PostgreSQL' });
+    return;
+  }
+
+  const input = req.body as CreateLearningResourceInput;
+
+  // Validate required fields
+  if (!input.resourceType || !input.title || !input.provider || !input.url) {
+    res.status(400).json({ error: 'resourceType, title, provider, and url are required' });
+    return;
+  }
+
+  const validTypes = ['guitar-tabs', 'guitar-chords', 'piano-keys', 'sheet-music', 'tutorial'];
+  if (!validTypes.includes(input.resourceType)) {
+    res.status(400).json({ error: `resourceType must be one of: ${validTypes.join(', ')}` });
+    return;
+  }
+
+  try {
+    const resource = await store.createLearningResource(id, input);
+
+    store.recordEvent('track.learn_resource_added', {
+      userId: getActorId(req),
+      entityType: 'track',
+      entityId: id,
+      metadata: { resourceId: resource.id, resourceType: resource.resourceType, url: resource.url },
+    }).catch(() => {});
+
+    res.status(201).json(resource);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: 'Failed to create learning resource', detail: msg });
+  }
+});
+
+// POST /api/tracks/:id/learn/:resourceId/save — bookmark a learning resource
+router.post('/:id/learn/:resourceId/save', async (req, res) => {
+  const trackId = paramId(req.params.id);
+  const resourceId = paramId(req.params.resourceId);
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Learning resources require PostgreSQL' });
+    return;
+  }
+
+  try {
+    const resource = await store.saveLearningResource(trackId, resourceId);
+    if (!resource) { res.status(404).json({ error: 'Resource not found' }); return; }
+
+    store.recordEvent('track.learn_resource_saved', {
+      userId: getActorId(req),
+      entityType: 'track',
+      entityId: trackId,
+      metadata: { resourceId, url: resource.url },
+    }).catch(() => {});
+
+    res.json(resource);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: 'Failed to save learning resource', detail: msg });
+  }
+});
+
+// DELETE /api/tracks/:id/learn/:resourceId/save — unbookmark a learning resource
+router.delete('/:id/learn/:resourceId/save', async (req, res) => {
+  const trackId = paramId(req.params.id);
+  const resourceId = paramId(req.params.resourceId);
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Learning resources require PostgreSQL' });
+    return;
+  }
+
+  try {
+    const resource = await store.unsaveLearningResource(trackId, resourceId);
+    if (!resource) { res.status(404).json({ error: 'Resource not found' }); return; }
+
+    res.json(resource);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: 'Failed to unsave learning resource', detail: msg });
+  }
+});
+
+// DELETE /api/tracks/:id/learn/:resourceId — delete a learning resource
+router.delete('/:id/learn/:resourceId', async (req, res) => {
+  const trackId = paramId(req.params.id);
+  const resourceId = paramId(req.params.resourceId);
+
+  if (!store.isPostgres()) {
+    res.status(501).json({ error: 'Learning resources require PostgreSQL' });
+    return;
+  }
+
+  try {
+    const deleted = await store.deleteLearningResource(trackId, resourceId);
+    if (!deleted) { res.status(404).json({ error: 'Resource not found' }); return; }
+
+    store.recordEvent('track.learn_resource_deleted', {
+      userId: getActorId(req),
+      entityType: 'track',
+      entityId: trackId,
+      metadata: { resourceId },
+    }).catch(() => {});
+
+    res.status(204).send();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: 'Failed to delete learning resource', detail: msg });
   }
 });
 
