@@ -52,6 +52,9 @@ export function usePlaybackSync(): PlaybackSyncState {
     currentTime,
     play,
     setPlaylist,
+    playlistContext,
+    queue: audioQueue,
+    playFromQueue,
   } = useAudioPlayer();
 
   const [queue, setQueueState] = useState<string[]>([]);
@@ -112,6 +115,42 @@ export function usePlaybackSync(): PlaybackSyncState {
     }
   }, []);
 
+  // ── Playlist context watcher ──────────────────────────────────────────────
+  // When a playlist starts, push all track IDs as the queue upfront.
+  // When the playlist is cleared (user played a track directly), shrink queue.
+  const prevPlaylistIdRef = useRef<string | null>(null);
+  const playlistContextRef = useRef(playlistContext);
+  useEffect(() => { playlistContextRef.current = playlistContext; }, [playlistContext]);
+
+  useEffect(() => {
+    const newId = playlistContext?.playlistId ?? null;
+    const oldId = prevPlaylistIdRef.current;
+    if (newId === oldId) return;
+    prevPlaylistIdRef.current = newId;
+
+    if (playlistContext) {
+      // New playlist started — set sync queue to all playlist track IDs
+      const trackIds = playlistContext.tracks.map(t => t.id);
+      setQueueState(trackIds);
+      queueRef.current = trackIds;
+      // Also update queueTracks for immediate UI display
+      setQueueTracks(playlistContext.tracks);
+    } else if (oldId !== null) {
+      // Playlist was cleared (user played a non-playlist track) — shrink queue
+      if (currentTrackRef.current) {
+        // Use the audioQueue from AudioPlayer (may contain page tracks)
+        const newQueue = audioQueue.length > 0
+          ? audioQueue.map(t => t.id)
+          : [currentTrackRef.current.id];
+        setQueueState(newQueue);
+        queueRef.current = newQueue;
+        if (audioQueue.length > 0) {
+          setQueueTracks(audioQueue);
+        }
+      }
+    }
+  }, [playlistContext, audioQueue]);
+
   // Track changes: when current track changes, push + add to history
   const prevTrackIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -124,26 +163,38 @@ export function usePlaybackSync(): PlaybackSyncState {
     // Add previous track to history (if it existed)
     const addToHistory = prevTrackId ?? undefined;
 
-    // Update queue: ensure current track is in queue
-    const newQueue = [...queueRef.current];
-    if (!newQueue.includes(currentTrack.id)) {
-      // Find current track position or add at end
-      const idx = newQueue.indexOf(prevTrackId ?? '');
-      if (idx >= 0) {
-        newQueue.splice(idx + 1, 0, currentTrack.id);
-      } else {
-        newQueue.push(currentTrack.id);
+    // If in playlist mode, use the full playlist queue (already set by playlist watcher)
+    // Otherwise, update queue incrementally
+    if (playlistContextRef.current) {
+      // Queue is already the full playlist — just push current state
+      pushState({
+        currentTrackId: currentTrack.id,
+        isPlaying: true,
+        positionSec: 0,
+        queue: queueRef.current,
+        addToHistory,
+      });
+    } else {
+      // Not in playlist mode — add track to queue if not present
+      const newQueue = [...queueRef.current];
+      if (!newQueue.includes(currentTrack.id)) {
+        const idx = newQueue.indexOf(prevTrackId ?? '');
+        if (idx >= 0) {
+          newQueue.splice(idx + 1, 0, currentTrack.id);
+        } else {
+          newQueue.push(currentTrack.id);
+        }
+        setQueueState(newQueue);
       }
-      setQueueState(newQueue);
-    }
 
-    pushState({
-      currentTrackId: currentTrack.id,
-      isPlaying: true,
-      positionSec: 0,
-      queue: newQueue.length > 0 ? newQueue : queueRef.current,
-      addToHistory,
-    });
+      pushState({
+        currentTrackId: currentTrack.id,
+        isPlaying: true,
+        positionSec: 0,
+        queue: newQueue.length > 0 ? newQueue : queueRef.current,
+        addToHistory,
+      });
+    }
   }, [currentTrack, pushState]);
 
   // Play/pause changes
@@ -224,15 +275,14 @@ export function usePlaybackSync(): PlaybackSyncState {
     pushState({ queue: trackIds });
   }, [pushState]);
 
-  // Jump to a track in the queue
+  // Jump to a track in the queue (preserves playlist context)
   const jumpToQueueTrack = useCallback((trackId: string) => {
-    const track = queueTracks.find(t => t.id === trackId);
+    // Prefer audioQueue (has Track objects immediately) over server-hydrated queueTracks
+    const track = audioQueue.find(t => t.id === trackId) ?? queueTracks.find(t => t.id === trackId);
     if (track) {
-      play(track);
-      // Also set the playlist for the audio player's next/prev
-      setPlaylist(queueTracks);
+      playFromQueue(track);
     }
-  }, [queueTracks, play, setPlaylist]);
+  }, [audioQueue, queueTracks, playFromQueue]);
 
   // Replay a track from history
   const replayFromHistory = useCallback((trackId: string) => {

@@ -12,7 +12,7 @@ export default function AlbumPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const { play, pause, currentTrack, isPlaying } = useAudioPlayer();
+  const { play, pause, currentTrack, isPlaying, setPlaylist } = useAudioPlayer();
 
   useEffect(() => {
     if (!idOrSlug) return;
@@ -26,6 +26,11 @@ export default function AlbumPage() {
       .catch(e => setError(e instanceof Error ? e.message : 'Album not found'))
       .finally(() => setLoading(false));
   }, [idOrSlug]);
+
+  // Set playlist for next/prev when tracks load
+  useEffect(() => {
+    if (tracks.length > 0) setPlaylist(tracks);
+  }, [tracks, setPlaylist]);
 
   const handlePlay = (track: Track) => {
     if (currentTrack?.id === track.id && isPlaying) pause();

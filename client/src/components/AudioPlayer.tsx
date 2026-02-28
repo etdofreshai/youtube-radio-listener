@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useRef, useEffect, useCallback } f
 import { Link } from 'react-router-dom';
 import type { Track, RadioStation } from '../types';
 import { getPlaybackUrl, getRadioProxyUrl } from '../api';
+import { getAudioBlob, isDownloaded as checkDownloaded } from '../services/downloadStore';
 
 export type LoopMode = 'off' | 'all' | 'one';
 
@@ -29,6 +30,8 @@ interface AudioPlayerState {
   loopMode: LoopMode;
   /** Non-null when a playlist is currently active (i.e. tracks were loaded via playPlaylist). */
   playlistContext: PlaylistContext | null;
+  /** Current playback queue — queue[0] is currently playing, queue.slice(1) is "Up Next". */
+  queue: Track[];
 }
 
 interface AudioPlayerActions {
@@ -54,10 +57,22 @@ interface AudioPlayerActions {
   playPlaylist: (playlistId: string, playlistName: string, tracks: Track[], startIndex?: number) => void;
   /** Clear the playlist context (e.g. user switched to playing individual tracks). */
   clearPlaylistContext: () => void;
+  /**
+   * Interrupt current playback (including active playlist), clear the queue,
+   * and play the given track immediately.
+   */
+  playTrackNow: (track: Track) => void;
+  /**
+   * Play a track that's already in the current queue without clearing playlist context.
+   * Used when the user clicks on a track in the "Up Next" panel.
+   */
+  playFromQueue: (track: Track) => void;
 }
 
 interface AudioPlayerContextType extends AudioPlayerState, AudioPlayerActions {
   setPlaylist: (tracks: Track[]) => void;
+  /** Replace the entire queue. Alias for setPlaylist with better semantics. */
+  setQueue: (tracks: Track[]) => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextType | null>(null);
@@ -163,7 +178,6 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     }
     // ─────────────────────────────────────────────────────────────────────
 
-    audio.src = getPlaybackUrl(track);
     const vol = track.volume ?? volume;
     setVolumeState(vol);
     // Use GainNode for volume — supports 0-200% (gain 0.0-2.0); respect mute
@@ -173,12 +187,43 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setCurrentTrack(track);
     setCurrentRadio(null);
 
-    // If track has startTimeSec, seek to it
-    if (track.startTimeSec) {
-      audio.currentTime = track.startTimeSec;
-    }
+    // ── Local-first playback: check IndexedDB for downloaded audio ────────
+    const startPlayback = (src: string) => {
+      audio.src = src;
+      if (track.startTimeSec) {
+        audio.currentTime = track.startTimeSec;
+      }
+      audio.play().catch(err => console.error('Play failed:', err));
+    };
 
-    audio.play().catch(err => console.error('Play failed:', err));
+    // Try local blob first, fall back to server streaming
+    (async () => {
+      try {
+        if (!track.isLiveStream) {
+          const locallyDownloaded = await checkDownloaded(track.id);
+          if (locallyDownloaded) {
+            const blob = await getAudioBlob(track.id);
+            if (blob && blob.size > 100) {
+              const objectUrl = URL.createObjectURL(blob);
+              // Revoke previous object URL on next src change
+              const prevSrc = audio.src;
+              startPlayback(objectUrl);
+              // Listen for src change to revoke
+              const cleanup = () => {
+                URL.revokeObjectURL(objectUrl);
+                audio.removeEventListener('emptied', cleanup);
+              };
+              audio.addEventListener('emptied', cleanup);
+              return;
+            }
+          }
+        }
+      } catch {
+        // IndexedDB error — fall through to server stream
+      }
+      // Fall back to server streaming
+      startPlayback(getPlaybackUrl(track));
+    })();
   }, [volume, isMuted]);
 
   const playRadio = useCallback(async (station: RadioStation) => {
@@ -426,13 +471,41 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     playlistContextRef.current = null;
   }, []);
 
+  /**
+   * Interrupt current playback (including active playlist), clear the queue,
+   * and play the given track immediately.
+   */
+  const playTrackNow = useCallback((track: Track) => {
+    // Clear playlist context
+    setPlaylistContext(null);
+    playlistContextRef.current = null;
+    // Replace queue with just this track
+    setPlaylist([track]);
+    // Play without playlist flag → play() won't re-clear context (it's already null)
+    playingFromPlaylistRef.current = false;
+    play(track);
+  }, [play]);
+
+  /**
+   * Play a track that's already in the current queue without clearing playlist context.
+   * Used when the user clicks on a track in the "Up Next" panel.
+   */
+  const playFromQueue = useCallback((track: Track) => {
+    playingFromPlaylistRef.current = true;
+    play(track);
+  }, [play]);
+
   return (
     <AudioPlayerContext.Provider value={{
       currentTrack, currentRadio, isPlaying, currentTime, duration, volume, isMuted,
       radioLoading, radioError,
       shuffle, loopMode, playlistContext,
-      play, playRadio, pause, resume, stop, seek, setVolume, toggleMute, setPlaylist, playNext, playPrev,
-      updateCurrentTrack, toggleShuffle, cycleLoopMode, playPlaylist, clearPlaylistContext,
+      queue: playlist,
+      play, playRadio, pause, resume, stop, seek, setVolume, toggleMute,
+      setPlaylist, setQueue: setPlaylist,
+      playNext, playPrev,
+      updateCurrentTrack, toggleShuffle, cycleLoopMode,
+      playPlaylist, clearPlaylistContext, playTrackNow, playFromQueue,
     }}>
       {children}
     </AudioPlayerContext.Provider>
@@ -640,6 +713,7 @@ export function PlayerBar() {
         trackId={currentTrack!.id}
         trackTitle={currentTrack!.title}
         youtubeUrl={currentTrack!.youtubeUrl}
+        track={currentTrack!}
         className="player-bar-menu"
       />
     </div>

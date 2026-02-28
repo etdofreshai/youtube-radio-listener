@@ -6,6 +6,7 @@ import { getVideoUrl, downloadVideo as apiDownloadVideo, getTrack } from '../api
 import { usePlaybackSync } from '../hooks/usePlaybackSync';
 import TrackMenu from '../components/TrackMenu';
 import FavoriteButton from '../components/FavoriteButton';
+import DownloadButton from '../components/DownloadButton';
 import type { Track } from '../types';
 
 export type MediaMode = 'video' | 'artwork' | 'lyrics';
@@ -48,6 +49,7 @@ export default function NowPlayingPage() {
     isMuted,
     shuffle,
     loopMode,
+    queue: playerQueue,
     pause,
     resume,
     stop,
@@ -69,11 +71,9 @@ export default function NowPlayingPage() {
 
   const hasVideo = currentTrack?.videoStatus === 'ready';
 
-  // Playback sync (cross-device) and queue state
+  // Playback sync (cross-device) and history
   const {
-    queue,
     playHistory,
-    queueTracks,
     historyTracks,
     isSynced,
     jumpToQueueTrack,
@@ -83,12 +83,13 @@ export default function NowPlayingPage() {
   type QueueTab = 'queue' | 'history';
   const [queueTab, setQueueTab] = useState<QueueTab>('queue');
 
-  // Compute upcoming queue (tracks after current)
-  const currentQueueIndex = currentTrack ? queue.indexOf(currentTrack.id) : -1;
-  const upcomingIds = currentQueueIndex >= 0 ? queue.slice(currentQueueIndex + 1) : queue;
-  const upcomingTracks = upcomingIds
-    .map(id => queueTracks.find(t => t.id === id))
-    .filter(Boolean) as Track[];
+  // Compute upcoming queue from AudioPlayer's queue (immediate, no server roundtrip)
+  const currentPlayerQueueIndex = currentTrack
+    ? playerQueue.findIndex(t => t.id === currentTrack.id)
+    : -1;
+  const upcomingTracks = currentPlayerQueueIndex >= 0
+    ? playerQueue.slice(currentPlayerQueueIndex + 1)
+    : [];
 
   // ── Poll for video status updates while a download is in progress ──────────
   // currentTrack is set once when play() is called and never auto-refreshes,
@@ -303,11 +304,13 @@ export default function NowPlayingPage() {
                 {track.isLiveStream && <span className="badge-live badge-live-lg" title="Live Stream">LIVE</span>}
                 {track.title}
               </h1>
+              <DownloadButton track={track} variant="button" />
               <FavoriteButton type="track" entityId={track.id} size="lg" />
               <TrackMenu
                 trackId={track.id}
                 trackTitle={track.title}
                 youtubeUrl={track.youtubeUrl}
+                track={track}
                 className="now-playing-track-menu"
               />
             </div>
