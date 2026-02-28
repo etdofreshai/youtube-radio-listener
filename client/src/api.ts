@@ -1,6 +1,6 @@
 import type {
   Track, Playlist, Favorite, CreateTrackInput, UpdateTrackInput, CreatePlaylistInput,
-  PaginatedResponse, SortableTrackField, SortDirection,
+  PaginatedResponse, SortableTrackField, SortDirection, SchedulerStatus,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL || '';
@@ -52,7 +52,7 @@ export const updateTrack = (id: string, data: UpdateTrackInput) =>
 export const deleteTrack = (id: string) =>
   request<void>(`/api/tracks/${id}`, { method: 'DELETE' });
 
-// Audio download/refresh
+// Audio
 export const downloadTrack = (id: string) =>
   request<Track>(`/api/tracks/${id}/download`, { method: 'POST' });
 
@@ -71,7 +71,14 @@ export const enrichTrack = (id: string) =>
   request<Track>(`/api/tracks/${id}/enrich`, { method: 'POST' });
 
 export const enrichAllTracks = (force?: boolean) =>
-  request<{ message: string }>(`/api/tracks/enrich-all${force ? '?force=true' : ''}`, { method: 'POST' });
+  request<{ message: string; queued: number }>(`/api/tracks/enrich-all${force ? '?force=true' : ''}`, { method: 'POST' });
+
+// Scheduler / enrichment status
+export const getEnrichmentStatus = () =>
+  request<SchedulerStatus>('/api/tracks/enrichment/status');
+
+export const forceEnrichmentTick = () =>
+  request<{ message: string; status: SchedulerStatus }>('/api/tracks/enrichment/tick', { method: 'POST' });
 
 // Audio URL helper
 export function getAudioUrl(trackId: string): string {
@@ -92,7 +99,6 @@ export const updatePlaylist = (id: string, data: Partial<CreatePlaylistInput>) =
 export const deletePlaylist = (id: string) =>
   request<void>(`/api/playlists/${id}`, { method: 'DELETE' });
 
-// Playlist track management
 export const addTrackToPlaylist = (playlistId: string, trackId: string, position?: number) =>
   request<Playlist>(`/api/playlists/${playlistId}/tracks`, {
     method: 'POST',

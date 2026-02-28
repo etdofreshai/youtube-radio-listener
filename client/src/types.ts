@@ -1,6 +1,17 @@
 export type AudioStatus = 'pending' | 'downloading' | 'ready' | 'error';
 
+export type EnrichmentStatus =
+  | 'none' | 'queued' | 'stage_a' | 'stage_a_done'
+  | 'stage_b' | 'complete' | 'error';
+
 // ---------- Metadata ----------
+
+export interface FieldConfidence {
+  field: string;
+  confidence: 'high' | 'medium' | 'low' | 'manual';
+  source: string;
+  updatedAt: string;
+}
 
 export interface TrackMetadata {
   ytChannel: string | null;
@@ -16,12 +27,25 @@ export interface TrackMetadata {
   label: string | null;
   isrc: string | null;
   bpm: number | null;
+  artworkUrl: string | null;
+  artworkSource: string | null;
+  alternateLinks: Record<string, string> | null;
 }
 
 export interface TrackProvenance {
   metadataSource: string | null;
   metadataConfidence: string | null;
+  fieldConfidences: FieldConfidence[];
   lastEnrichedAt: string | null;
+}
+
+export interface TrackEnrichmentState {
+  enrichmentStatus: EnrichmentStatus;
+  enrichmentAttempts: number;
+  enrichmentError: string | null;
+  nextEnrichAt: string | null;
+  stageACompletedAt: string | null;
+  stageBCompletedAt: string | null;
 }
 
 export interface TrackVerification {
@@ -32,7 +56,7 @@ export interface TrackVerification {
 
 // ---------- Track ----------
 
-export interface Track extends TrackMetadata, TrackProvenance, TrackVerification {
+export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentState, TrackVerification {
   id: string;
   youtubeUrl: string;
   title: string;
@@ -63,6 +87,29 @@ export interface PaginatedResponse<T> {
   totalPages: number;
   sortBy: string;
   sortDir: string;
+}
+
+// ---------- Scheduler Status ----------
+
+export interface SchedulerStatus {
+  running: boolean;
+  intervalMs: number;
+  queueLength: number;
+  activeJobs: number;
+  maxConcurrency: number;
+  budget: {
+    aiEnrichesThisHour: number;
+    aiEnrichesToday: number;
+    maxAiPerHour: number;
+    maxAiPerDay: number;
+  };
+  lastTickAt: string | null;
+  nextTickAt: string | null;
+  stats: {
+    totalStageACompleted: number;
+    totalStageBCompleted: number;
+    totalErrors: number;
+  };
 }
 
 // ---------- Other models ----------

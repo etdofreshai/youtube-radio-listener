@@ -7,6 +7,7 @@ import tracksRouter from './routes/tracks';
 import playlistsRouter from './routes/playlists';
 import favoritesRouter from './routes/favorites';
 import audioRouter from './routes/audio';
+import { startScheduler } from './services/scheduler';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -33,6 +34,14 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌊 Nightwave server running on http://localhost:${PORT}`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`   Database: ${process.env.DATABASE_URL ? 'PostgreSQL' : 'In-memory'}`);
+
+  // Start background enrichment scheduler
+  const disableScheduler = process.env.ENRICH_SCHEDULER_DISABLED === 'true';
+  if (!disableScheduler) {
+    startScheduler();
+  } else {
+    console.log('   Enrichment scheduler: disabled');
+  }
 });
 
 export default app;
