@@ -238,6 +238,24 @@ export const getPlaybackSource = (trackId: string) =>
 export const getPlaylists = () => request<Playlist[]>('/api/playlists');
 export const getPlaylist = (id: string) => request<Playlist>(`/api/playlists/${id}`);
 
+/**
+ * Fetch a playlist and resolve its trackIds to full Track objects.
+ * Tracks are returned in playlist order; missing tracks are omitted.
+ */
+export async function getPlaylistTracks(
+  playlistId: string,
+): Promise<{ playlist: Playlist; tracks: Track[] }> {
+  const [playlist, allTracksResult] = await Promise.all([
+    getPlaylist(playlistId),
+    getTracks({ pageSize: 1000 }),
+  ]);
+  const trackMap = new Map(allTracksResult.data.map(t => [t.id, t]));
+  const tracks = playlist.trackIds
+    .map(id => trackMap.get(id))
+    .filter((t): t is Track => t !== undefined);
+  return { playlist, tracks };
+}
+
 export const createPlaylist = (data: CreatePlaylistInput) =>
   request<Playlist>('/api/playlists', { method: 'POST', body: JSON.stringify(data) });
 

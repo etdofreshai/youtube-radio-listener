@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Playlist, Track } from '../types';
 import * as api from '../api';
+import { useAudioPlayer } from '../components/AudioPlayer';
 
 type Toast = { message: string; type: 'success' | 'error' };
 
@@ -31,6 +32,7 @@ export default function PlaylistEditorPage() {
   const dragOver = useRef<number | null>(null);
 
   const currentUserId = api.getActiveUserId() || '00000000-0000-0000-0000-000000000001';
+  const { playPlaylist } = useAudioPlayer();
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -153,6 +155,12 @@ export default function PlaylistEditorPage() {
     dragOver.current = null;
   };
 
+  const handlePlayAll = useCallback(() => {
+    if (!playlist || playlistTracks.length === 0) return;
+    playPlaylist(playlist.id, playlist.name, playlistTracks);
+    showToast(`▶ Playing "${playlist.name}" — ${playlistTracks.length} track${playlistTracks.length !== 1 ? 's' : ''}`);
+  }, [playlist, playlistTracks, playPlaylist, showToast]);
+
   const handleDeletePlaylist = async () => {
     if (!playlist || !confirm(`Delete playlist "${playlist.name}"?`)) return;
     try {
@@ -194,11 +202,22 @@ export default function PlaylistEditorPage() {
           </button>
           <h1>Edit Playlist</h1>
         </div>
-        {isOwner && (
-          <button className="btn btn-danger btn-sm" onClick={handleDeletePlaylist}>
-            🗑 Delete Playlist
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {playlistTracks.length > 0 && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handlePlayAll}
+              title={`Play all ${playlistTracks.length} tracks in order`}
+            >
+              ▶ Play All ({playlistTracks.length})
+            </button>
+          )}
+          {isOwner && (
+            <button className="btn btn-danger btn-sm" onClick={handleDeletePlaylist}>
+              🗑 Delete Playlist
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Ownership info */}
@@ -305,6 +324,16 @@ export default function PlaylistEditorPage() {
           <h2 className="editor-section-title">
             Playlist Tracks
             <span className="editor-count">{playlistTracks.length}</span>
+            {playlistTracks.length > 0 && (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handlePlayAll}
+                style={{ marginLeft: 8 }}
+                title="Play all tracks in order"
+              >
+                ▶ Play
+              </button>
+            )}
           </h2>
           {playlistTracks.length === 0 ? (
             <div className="editor-empty">

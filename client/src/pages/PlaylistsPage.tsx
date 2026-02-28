@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Playlist, CreatePlaylistInput } from '../types';
 import * as api from '../api';
 import FavoriteButton from '../components/FavoriteButton';
+import { useAudioPlayer } from '../components/AudioPlayer';
 
 export default function PlaylistsPage() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -15,6 +16,7 @@ export default function PlaylistsPage() {
   const navigate = useNavigate();
 
   const currentUserId = api.getActiveUserId() || '00000000-0000-0000-0000-000000000001';
+  const { playPlaylist } = useAudioPlayer();
 
   const load = useCallback(async () => {
     try {
@@ -57,6 +59,24 @@ export default function PlaylistsPage() {
       setError(e instanceof Error ? e.message : 'Failed to delete playlist');
     }
   };
+
+  const handlePlayPlaylist = useCallback(async (e: React.MouseEvent, p: Playlist) => {
+    e.stopPropagation();
+    if (p.trackIds.length === 0) {
+      setError('This playlist has no tracks');
+      return;
+    }
+    try {
+      const { playlist, tracks } = await api.getPlaylistTracks(p.id);
+      if (tracks.length === 0) {
+        setError('No playable tracks found in this playlist');
+        return;
+      }
+      playPlaylist(playlist.id, playlist.name, tracks);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load playlist tracks');
+    }
+  }, [playPlaylist]);
 
   /** True when current user can edit this playlist */
   function canEdit(p: Playlist): boolean {
@@ -122,7 +142,15 @@ export default function PlaylistsPage() {
                 </p>
               )}
 
-              <div style={{ marginTop: 12, display: 'flex', gap: 6 }}>
+              <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={(e) => handlePlayPlaylist(e, p)}
+                  disabled={p.trackIds.length === 0}
+                  title={p.trackIds.length === 0 ? 'No tracks in playlist' : `Play all ${p.trackIds.length} tracks`}
+                >
+                  ▶ Play
+                </button>
                 {canEdit(p) && (
                   <button
                     className="btn btn-secondary btn-sm"

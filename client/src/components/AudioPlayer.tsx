@@ -5,6 +5,16 @@ import { getPlaybackUrl, getRadioProxyUrl } from '../api';
 
 export type LoopMode = 'off' | 'all' | 'one';
 
+/** Context for the currently active playlist playback session. */
+export interface PlaylistContext {
+  playlistId: string;
+  playlistName: string;
+  /** Ordered list of tracks in the playlist (as loaded when play was triggered). */
+  tracks: Track[];
+  /** 0-based index of the currently-playing track within `tracks`. */
+  trackIndex: number;
+}
+
 interface AudioPlayerState {
   currentTrack: Track | null;
   currentRadio: RadioStation | null;
@@ -17,6 +27,8 @@ interface AudioPlayerState {
   radioError: string | null;
   shuffle: boolean;
   loopMode: LoopMode;
+  /** Non-null when a playlist is currently active (i.e. tracks were loaded via playPlaylist). */
+  playlistContext: PlaylistContext | null;
 }
 
 interface AudioPlayerActions {
@@ -34,6 +46,14 @@ interface AudioPlayerActions {
   updateCurrentTrack: (updates: Partial<Track>) => void;
   toggleShuffle: () => void;
   cycleLoopMode: () => void;
+  /**
+   * Load all tracks of a playlist and start playing from `startIndex`.
+   * Sets the AudioPlayer playlist for next/prev/auto-advance and tracks
+   * the current playlist context (name + track X of Y).
+   */
+  playPlaylist: (playlistId: string, playlistName: string, tracks: Track[], startIndex?: number) => void;
+  /** Clear the playlist context (e.g. user switched to playing individual tracks). */
+  clearPlaylistContext: () => void;
 }
 
 interface AudioPlayerContextType extends AudioPlayerState, AudioPlayerActions {
@@ -66,6 +86,17 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [shuffle, setShuffle] = useState(false);
   const [loopMode, setLoopMode] = useState<LoopMode>('off');
+  const [playlistContext, setPlaylistContext] = useState<PlaylistContext | null>(null);
+
+  // Ref mirror of playlistContext for use inside callbacks without stale closures
+  const playlistContextRef = useRef<PlaylistContext | null>(null);
+  // When set to true, the next play() call is an internal playlist navigation
+  // (auto-advance / next / prev) and should NOT clear the playlist context.
+  const playingFromPlaylistRef = useRef<boolean>(false);
+
+  // Keep ref in sync with state
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  playlistContextRef.current = playlistContext;
 
   // Ref to hold auto-advance callback (updated when playlist/currentTrack change)
   const onEndedRef = useRef<() => void>(() => {});
@@ -110,6 +141,27 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (audioCtxRef.current?.state === 'suspended') {
       audioCtxRef.current.resume();
     }
+
+    // ── Playlist context handling ─────────────────────────────────────────
+    if (playingFromPlaylistRef.current) {
+      // Internal playlist navigation (auto-advance / playNext / playPrev / playPlaylist).
+      // Update the track index in context; do NOT clear it.
+      playingFromPlaylistRef.current = false;
+      const ctx = playlistContextRef.current;
+      if (ctx) {
+        const idx = ctx.tracks.findIndex(t => t.id === track.id);
+        if (idx >= 0) {
+          const updated = { ...ctx, trackIndex: idx };
+          setPlaylistContext(updated);
+          playlistContextRef.current = updated;
+        }
+      }
+    } else {
+      // User directly played a track (not via playlist nav) → clear context.
+      setPlaylistContext(null);
+      playlistContextRef.current = null;
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     audio.src = getPlaybackUrl(track);
     const vol = track.volume ?? volume;
@@ -217,6 +269,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setDuration(0);
     setRadioLoading(false);
     setRadioError(null);
+    setPlaylistContext(null);
+    playlistContextRef.current = null;
   }, []);
 
   const seek = useCallback((time: number) => {
@@ -265,10 +319,15 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (shuffle) {
       // Pick a random track that isn't the current one
       const others = readyTracks.filter(t => t.id !== currentTrack.id);
-      if (others.length > 0) play(others[Math.floor(Math.random() * others.length)]);
+      if (others.length > 0) {
+        playingFromPlaylistRef.current = true;
+        play(others[Math.floor(Math.random() * others.length)]);
+      }
     } else if (idx < readyTracks.length - 1) {
+      playingFromPlaylistRef.current = true;
       play(readyTracks[idx + 1]);
     } else if (loopMode === 'all' && readyTracks.length > 0) {
+      playingFromPlaylistRef.current = true;
       play(readyTracks[0]);
     }
   }, [currentTrack, playlist, play, shuffle, loopMode]);
@@ -277,8 +336,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (!currentTrack || playlist.length === 0) return;
     const readyTracks = playlist.filter(t => t.audioStatus === 'ready');
     const idx = readyTracks.findIndex(t => t.id === currentTrack.id);
-    if (idx > 0) play(readyTracks[idx - 1]);
-    else if (loopMode === 'all' && readyTracks.length > 0) {
+    if (idx > 0) {
+      playingFromPlaylistRef.current = true;
+      play(readyTracks[idx - 1]);
+    } else if (loopMode === 'all' && readyTracks.length > 0) {
+      playingFromPlaylistRef.current = true;
       play(readyTracks[readyTracks.length - 1]);
     }
   }, [currentTrack, playlist, play, loopMode]);
@@ -308,6 +370,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
       // Loop one: replay current track
       if (loopMode === 'one' && currentTrack) {
+        playingFromPlaylistRef.current = true;
         play(currentTrack);
         return;
       }
@@ -316,15 +379,18 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       if (shuffle && readyTracks.length > 1) {
         const others = readyTracks.filter(t => t.id !== currentTrack?.id);
         if (others.length > 0) {
+          playingFromPlaylistRef.current = true;
           play(others[Math.floor(Math.random() * others.length)]);
           return;
         }
       }
 
       if (idx >= 0 && idx < readyTracks.length - 1) {
+        playingFromPlaylistRef.current = true;
         play(readyTracks[idx + 1]);
       } else if (loopMode === 'all' && readyTracks.length > 0) {
         // Wrap around to first track
+        playingFromPlaylistRef.current = true;
         play(readyTracks[0]);
       } else {
         setIsPlaying(false);
@@ -332,13 +398,41 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
   }, [currentTrack, playlist, play, shuffle, loopMode]);
 
+  /**
+   * Load a playlist and start playing from `startIndex` (default 0).
+   * Sets up the audio player queue and records the playlist context
+   * (name + current track X of Y) shown in the player bar.
+   */
+  const playPlaylist = useCallback((
+    playlistId: string,
+    playlistName: string,
+    tracks: Track[],
+    startIndex = 0,
+  ) => {
+    if (tracks.length === 0) return;
+    const idx = Math.max(0, Math.min(startIndex, tracks.length - 1));
+    const ctx: PlaylistContext = { playlistId, playlistName, tracks, trackIndex: idx };
+    // Set context BEFORE calling play so the flag-check inside play sees it
+    setPlaylistContext(ctx);
+    playlistContextRef.current = ctx;
+    setPlaylist(tracks);
+    playingFromPlaylistRef.current = true;
+    play(tracks[idx]);
+  }, [play, setPlaylist]);
+
+  /** Explicitly clear the current playlist context without stopping playback. */
+  const clearPlaylistContext = useCallback(() => {
+    setPlaylistContext(null);
+    playlistContextRef.current = null;
+  }, []);
+
   return (
     <AudioPlayerContext.Provider value={{
       currentTrack, currentRadio, isPlaying, currentTime, duration, volume, isMuted,
       radioLoading, radioError,
-      shuffle, loopMode,
+      shuffle, loopMode, playlistContext,
       play, playRadio, pause, resume, stop, seek, setVolume, toggleMute, setPlaylist, playNext, playPrev,
-      updateCurrentTrack, toggleShuffle, cycleLoopMode,
+      updateCurrentTrack, toggleShuffle, cycleLoopMode, playPlaylist, clearPlaylistContext,
     }}>
       {children}
     </AudioPlayerContext.Provider>
@@ -388,7 +482,7 @@ export function PlayerBar() {
   const {
     currentTrack, currentRadio, isPlaying, currentTime, duration, volume, isMuted,
     radioLoading, radioError,
-    shuffle, loopMode,
+    shuffle, loopMode, playlistContext,
     pause, resume, stop, seek, setVolume, toggleMute, playNext, playPrev,
     toggleShuffle, cycleLoopMode,
   } = useAudioPlayer();
@@ -479,6 +573,11 @@ export function PlayerBar() {
             {currentTrack!.title}
           </div>
           <div className="player-artist">{currentTrack!.artist}</div>
+          {playlistContext && (
+            <div className="player-playlist-label" title={`Playing from: ${playlistContext.playlistName}`}>
+              📋 {playlistContext.playlistName} · {playlistContext.trackIndex + 1}/{playlistContext.tracks.length}
+            </div>
+          )}
         </Link>
       </div>
 
