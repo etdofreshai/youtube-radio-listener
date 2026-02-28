@@ -3866,3 +3866,745 @@ a:hover {
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   RESPONSIVE DESIGN — Mobile & Tablet
+   ============================================================ */
+
+/* ---------- Mobile header (hamburger) ---------- */
+
+.mobile-header {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  z-index: 90;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+}
+
+.hamburger-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hamburger-btn:active {
+  background: var(--bg-hover);
+}
+
+.hamburger-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 22px;
+}
+
+.hamburger-icon span {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--text-primary);
+  border-radius: 1px;
+  transition: transform 0.25s, opacity 0.25s;
+}
+
+.hamburger-icon.open span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.hamburger-icon.open span:nth-child(2) {
+  opacity: 0;
+}
+.hamburger-icon.open span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+.mobile-header-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+}
+
+/* Sidebar overlay backdrop */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 99;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- Breakpoint: Tablet (≤768px) ---------- */
+
+@media (max-width: 768px) {
+  .mobile-header {
+    display: flex;
+  }
+
+  .sidebar-overlay {
+    display: block;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+
+  .sidebar-open ~ .sidebar-overlay,
+  .sidebar-overlay:not([style]) {
+    /* JS controls visibility via existence in DOM */
+  }
+
+  /* sidebar-overlay is only rendered when sidebar is open */
+  .sidebar-overlay {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    padding: 72px 16px 100px;
+    width: 100%;
+  }
+
+  /* Touch-friendly sidebar links */
+  .sidebar-nav a {
+    padding: 14px 16px;
+    font-size: 1rem;
+    min-height: 48px;
+  }
+
+  /* Sidebar logo (hidden in mobile — mobile-header shows it) */
+  .sidebar-logo {
+    padding: 16px 20px 12px;
+  }
+}
+
+/* ---------- Breakpoint: Mobile (≤480px) ---------- */
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 64px 12px 100px;
+  }
+
+  .page-header h1 {
+    font-size: 1.4rem;
+  }
+
+  /* Full-width buttons on mobile */
+  .btn {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    min-height: 44px;
+  }
+
+  .btn-sm {
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    min-height: 40px;
+  }
+}
+
+/* ---------- Player bar: responsive ---------- */
+
+@media (max-width: 768px) {
+  .player-bar {
+    height: auto;
+    min-height: 64px;
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .player-track-info {
+    min-width: 0;
+    max-width: none;
+    flex: 1;
+    order: 1;
+  }
+
+  .player-controls {
+    order: 2;
+    flex-shrink: 0;
+  }
+
+  .player-progress {
+    order: 4;
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  /* Hide volume on mobile player bar — NowPlaying page has full controls */
+  .player-volume {
+    display: none;
+  }
+
+  /* Touch-friendly player buttons */
+  .player-controls .btn-icon {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 1.1rem;
+  }
+
+  .player-play-btn {
+    font-size: 1.4rem !important;
+  }
+
+  .player-seek {
+    height: 6px;
+  }
+
+  .player-seek::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+  }
+
+  .player-seek::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .player-bar {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .player-title {
+    font-size: 0.82rem;
+  }
+
+  .player-artist {
+    font-size: 0.7rem;
+  }
+}
+
+/* ---------- Track rows: responsive ---------- */
+
+@media (max-width: 480px) {
+  .track-row {
+    grid-template-columns: 36px 1fr 40px;
+    gap: 2px 6px;
+    padding: 10px 10px;
+  }
+
+  /* Touch-friendly play button */
+  .btn-play {
+    width: 36px;
+    height: 36px;
+    font-size: 15px;
+  }
+
+  .track-title {
+    font-size: 0.9rem;
+  }
+
+  .track-subtitle {
+    font-size: 0.72rem;
+  }
+
+  /* Touch-friendly action menu trigger */
+  .action-menu-trigger {
+    width: 40px;
+    height: 40px;
+    font-size: 1.1rem;
+  }
+}
+
+/* ---------- Track detail panel: responsive ---------- */
+
+@media (max-width: 680px) {
+  .track-detail-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .track-detail {
+    padding: 12px 14px;
+  }
+}
+
+/* ---------- Form responsiveness ---------- */
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    padding: 12px 14px;
+  }
+
+  .modal {
+    margin: 10px;
+    padding: 20px;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .modal-lg {
+    width: calc(100vw - 20px);
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ---------- Now Playing page: responsive ---------- */
+
+@media (max-width: 480px) {
+  .now-playing-page {
+    padding: 12px;
+  }
+
+  .now-playing-title {
+    font-size: 1.4rem;
+  }
+
+  .now-playing-artist {
+    font-size: 0.95rem;
+  }
+
+  .now-playing-controls {
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .now-playing-btn {
+    font-size: 1.3rem !important;
+    padding: 12px !important;
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .now-playing-play-btn {
+    width: 60px !important;
+    height: 60px !important;
+    font-size: 1.6rem !important;
+  }
+
+  .now-playing-volume {
+    gap: 8px;
+  }
+
+  .now-playing-vol-slider {
+    max-width: none;
+    flex: 1;
+  }
+
+  .now-playing-mode-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .mode-toggle-btn {
+    padding: 8px 16px !important;
+    font-size: 1.1rem !important;
+    min-height: 44px;
+  }
+
+  .now-playing-seek {
+    height: 8px;
+  }
+
+  .now-playing-seek::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .now-playing-seek::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .now-playing-details {
+    padding: 14px;
+  }
+
+  .now-playing-dl {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .now-playing-dl dt {
+    font-weight: 600;
+    margin-top: 8px;
+  }
+
+  .now-playing-dl dt:first-child {
+    margin-top: 0;
+  }
+}
+
+/* ---------- Radios page: responsive ---------- */
+
+@media (max-width: 600px) {
+  /* Station form inputs */
+  .station-form .input,
+  .station-form input[class="input"] {
+    font-size: 16px; /* Prevent iOS zoom */
+    padding: 12px;
+  }
+}
+
+/* ---------- Entity grid (Artists, Albums): responsive ---------- */
+
+@media (max-width: 480px) {
+  .entity-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  .entity-card {
+    padding: 12px 8px;
+  }
+
+  .entity-card-image,
+  .entity-card-placeholder {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 8px;
+  }
+
+  .entity-card-name {
+    font-size: 0.85rem;
+  }
+}
+
+/* ---------- Playlist grid: responsive ---------- */
+
+@media (max-width: 480px) {
+  .playlist-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .playlist-card {
+    padding: 16px;
+  }
+}
+
+/* ---------- Pagination: responsive ---------- */
+
+@media (max-width: 480px) {
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .pagination-controls {
+    justify-content: center;
+  }
+
+  .pagination-controls .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .pagination-size {
+    justify-content: center;
+  }
+
+  .pagination-info {
+    text-align: center;
+  }
+}
+
+/* ---------- Search input: responsive ---------- */
+
+@media (max-width: 768px) {
+  .search-input {
+    width: 100%;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  .tracks-search {
+    width: 100%;
+  }
+}
+
+/* ---------- YouTube search: responsive ---------- */
+
+@media (max-width: 600px) {
+  .yt-search {
+    padding: 14px;
+  }
+
+  .yt-search-input {
+    font-size: 16px; /* Prevent iOS zoom */
+    padding: 12px;
+  }
+
+  .yt-result-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .yt-result-thumbnail {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16/9;
+  }
+
+  .yt-result-info {
+    gap: 6px;
+  }
+
+  .yt-result-title {
+    white-space: normal;
+    font-size: 0.92rem;
+  }
+
+  .yt-result-meta {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .yt-result-action {
+    align-self: flex-start;
+  }
+}
+
+/* ---------- Session pages: responsive ---------- */
+
+@media (max-width: 480px) {
+  .session-now-playing {
+    padding: 14px;
+    gap: 14px;
+  }
+
+  .session-np-art img,
+  .session-np-placeholder {
+    width: 80px;
+    height: 80px;
+  }
+
+  .session-np-title {
+    font-size: 1rem;
+  }
+
+  .session-play-btn {
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 1.2rem !important;
+  }
+
+  .session-queue-item {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .session-queue-artist {
+    display: none;
+  }
+}
+
+/* ---------- Editor panels: responsive ---------- */
+
+@media (max-width: 480px) {
+  .editor-track-item {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .editor-track-actions .btn-icon {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px;
+  }
+}
+
+/* ---------- Event/History: responsive ---------- */
+
+@media (max-width: 480px) {
+  .event-row {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .event-content {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .event-label {
+    font-size: 0.85rem;
+  }
+
+  .event-time {
+    font-size: 0.75rem;
+  }
+}
+
+/* ---------- Learn panel: responsive ---------- */
+
+@media (max-width: 480px) {
+  .learn-resources-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .learn-resource-card {
+    padding: 10px;
+  }
+
+  .learn-panel {
+    padding: 12px;
+  }
+}
+
+/* ---------- Toast: responsive ---------- */
+
+@media (max-width: 480px) {
+  .toast {
+    left: 10px;
+    right: 10px;
+    bottom: 80px;
+    text-align: center;
+  }
+}
+
+/* ---------- Password gate & user selector: responsive ---------- */
+
+@media (max-width: 480px) {
+  .gate-modal {
+    margin: 16px;
+    padding: 1.5rem;
+    max-width: calc(100vw - 32px);
+  }
+
+  .gate-title {
+    font-size: 1.4rem;
+  }
+
+  .gate-input {
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  .gate-submit {
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .user-select-btn {
+    padding: 0.85rem 1rem;
+    min-height: 56px;
+  }
+}
+
+/* ---------- General mobile improvements ---------- */
+
+@media (max-width: 768px) {
+  /* Ensure all clickable elements meet 44px touch target */
+  .btn-icon {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* Better scrollbar for mobile (thinner) */
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  /* Prevent text overflow everywhere */
+  .main-content {
+    overflow-x: hidden;
+  }
+
+  /* Stack page headers vertically */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .tracks-toolbar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  /* Full-width user form inputs */
+  .user-form {
+    flex-direction: column;
+  }
+
+  .user-form input,
+  .user-form select {
+    width: 100%;
+    min-width: 0;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  .user-edit-form {
+    flex-direction: column;
+  }
+
+  .user-edit-form input,
+  .user-edit-form select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* User list items stack better */
+  .user-item-content {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .user-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .user-edit-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* Session actions panel stack */
+  .session-actions-panel {
+    grid-template-columns: 1fr;
+  }
+}

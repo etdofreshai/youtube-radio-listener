@@ -1,4 +1,5 @@
-import { Routes, Route, NavLink } from 'react-router-dom';
+import { useState, useCallback, useEffect } from 'react';
+import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useAudioPlayer } from './components/AudioPlayer';
 import TracksPage from './pages/TracksPage';
 import NowPlayingPage from './pages/NowPlayingPage';
@@ -20,11 +21,11 @@ import UserSelector from './components/UserSelector';
 import { useAuth } from './context/AuthContext';
 
 /** Sidebar "Now Playing" link — only rendered when a track/radio is active. */
-function NowPlayingNavLink() {
+function NowPlayingNavLink({ onNavigate }: { onNavigate?: () => void }) {
   const { currentTrack, currentRadio } = useAudioPlayer();
   if (!currentTrack && !currentRadio) return null;
   return (
-    <NavLink to="/now-playing" className={({ isActive }) => isActive ? 'active now-playing-nav-link' : 'now-playing-nav-link'}>
+    <NavLink to="/now-playing" onClick={onNavigate} className={({ isActive }) => isActive ? 'active now-playing-nav-link' : 'now-playing-nav-link'}>
       ▶️ Now Playing
     </NavLink>
   );
@@ -32,6 +33,16 @@ function NowPlayingNavLink() {
 
 function AppShell() {
   const { passwordVerified, loading, currentUser, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+
+  // Close sidebar on route change (mobile navigation)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  const toggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   // Show nothing while we determine auth status (avoids flash)
   if (loading) {
@@ -58,35 +69,48 @@ function AppShell() {
   return (
     <AudioPlayerProvider>
       <div className="app-layout">
-        <aside className="sidebar">
+        {/* Mobile header with hamburger */}
+        <header className="mobile-header">
+          <button className="hamburger-btn" onClick={toggleSidebar} aria-label="Toggle menu">
+            <span className={`hamburger-icon ${sidebarOpen ? 'open' : ''}`}>
+              <span /><span /><span />
+            </span>
+          </button>
+          <span className="mobile-header-title">🌊 Nightwave</span>
+        </header>
+
+        {/* Overlay backdrop for mobile sidebar */}
+        {sidebarOpen && <div className="sidebar-overlay" onClick={closeSidebar} />}
+
+        <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
           <div className="sidebar-logo">🌊 Nightwave</div>
           <nav className="sidebar-nav">
-            <NowPlayingNavLink />
-            <NavLink to="/" end className={({ isActive }) => isActive ? 'active' : ''}>
+            <NowPlayingNavLink onNavigate={closeSidebar} />
+            <NavLink to="/" end onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               🎵 Tracks
             </NavLink>
-            <NavLink to="/artists" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/artists" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               🎤 Artists
             </NavLink>
-            <NavLink to="/albums" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/albums" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               💿 Albums
             </NavLink>
-            <NavLink to="/playlists" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/playlists" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               📋 Playlists
             </NavLink>
-            <NavLink to="/favorites" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/favorites" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               ❤️ Favorites
             </NavLink>
-            <NavLink to="/sessions" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/sessions" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               🎧 Sessions
             </NavLink>
-            <NavLink to="/history" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/history" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               📜 History
             </NavLink>
-            <NavLink to="/radios" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/radios" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               📻 Radios
             </NavLink>
-            <NavLink to="/users" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/users" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               👥 Users
             </NavLink>
           </nav>
