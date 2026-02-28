@@ -7,6 +7,7 @@ import YouTubeSearch from '../components/YouTubeSearch';
 import LearnPanel from '../components/LearnPanel';
 import FavoriteButton from '../components/FavoriteButton';
 import { useAudioPlayer } from '../components/AudioPlayer';
+import DownloadButton from '../components/DownloadButton';
 import { parseEndTime } from '../utils/endTimeParse';
 import { getEffectiveDuration, getEffectiveDurationFromStrings } from '../utils/effectiveDuration';
 
@@ -1146,6 +1147,7 @@ export default function TracksPage() {
 
                 {/* Actions — favorite + compact ⋯ menu */}
                 <div className="col-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
+                  <DownloadButton track={t} variant="icon" />
                   <FavoriteButton type="track" entityId={t.id} size="sm" />
                   <ActionMenu
                     track={t}

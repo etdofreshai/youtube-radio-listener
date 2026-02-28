@@ -5228,3 +5228,202 @@ a:hover {
 .now-playing-theater .now-playing-queue-panel {
   display: none;
 }
+
+/* ──────────────── Downloads Feature ──────────────── */
+
+/* Download icon button (compact, for track rows) */
+.download-icon-btn {
+  font-size: 0.85rem;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.download-icon-btn:hover { opacity: 1; }
+.download-icon-complete { opacity: 0.8; }
+.download-icon-active { opacity: 1; }
+
+.download-progress-ring {
+  display: inline-flex;
+  align-items: center;
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Download labeled button (for Now Playing, etc.) */
+.download-btn {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.download-btn-complete {
+  color: var(--success, #22c55e);
+  border-color: var(--success, #22c55e);
+  opacity: 0.8;
+}
+.download-btn-active {
+  animation: pulse-dim 1.5s ease-in-out infinite;
+}
+@keyframes pulse-dim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Downloads Page ── */
+
+.downloads-storage-gauge {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface, #1e1e1e);
+  border-radius: 8px;
+}
+.storage-gauge-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+.storage-gauge-fill {
+  height: 100%;
+  background: var(--accent, #1db954);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.storage-warning .storage-gauge-fill {
+  background: var(--warning, #f59e0b);
+}
+.storage-gauge-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #999);
+}
+.storage-warning-text {
+  color: var(--warning, #f59e0b);
+  font-weight: 600;
+}
+
+/* Active downloads section */
+.downloads-active-section {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--surface, #1e1e1e);
+  border-radius: 8px;
+}
+.downloads-active-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+.download-active-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+.download-active-info {
+  font-size: 0.8rem;
+  min-width: 100px;
+  color: var(--text-secondary, #999);
+}
+.download-progress-bar-wrap {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.download-progress-bar {
+  height: 100%;
+  background: var(--accent, #1db954);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+.download-active-pct {
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 32px;
+  text-align: right;
+}
+.download-active-size {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #999);
+  min-width: 100px;
+}
+
+/* Bulk actions */
+.downloads-bulk-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.delete-all-confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--danger, #f87171);
+}
+.btn-danger {
+  background: var(--danger, #f87171);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+.btn-danger:hover {
+  background: #ef4444;
+}
+
+/* Downloads list */
+.downloads-list .track-row,
+.downloads-header {
+  grid-template-columns: 36px 1fr 1fr 80px 140px 50px 60px;
+}
+.col-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.col-checkbox input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+.col-size {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #999);
+  text-align: right;
+}
+.col-date {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #999);
+}
+.downloads-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.downloads-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary, #999);
+}
+.row-selected {
+  background: rgba(29, 185, 84, 0.08);
+}
+.downloads-summary {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #999);
+  padding: 0.75rem 0;
+}
+
+@media (max-width: 768px) {
+  .downloads-list .track-row,
+  .downloads-header {
+    grid-template-columns: 30px 1fr 80px 50px 40px;
+  }
+  .downloads-artist,
+  .col-date {
+    display: none;
+  }
+}

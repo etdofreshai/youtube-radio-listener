@@ -15,12 +15,14 @@ import AlbumsPage from './pages/AlbumsPage';
 import AlbumPage from './pages/AlbumPage';
 import RadiosPage from './pages/RadiosPage';
 import UsersPage from './pages/UsersPage';
+import DownloadsPage from './pages/DownloadsPage';
 import { AudioPlayerProvider, PlayerBar } from './components/AudioPlayer';
 import PasswordGate from './components/PasswordGate';
 import UserSelector from './components/UserSelector';
 import ImpersonationBanner from './components/ImpersonationBanner';
 import { useAuth } from './context/AuthContext';
 import { FavoritesProvider } from './context/FavoritesContext';
+import { DownloadProvider } from './context/DownloadContext';
 
 /** Sidebar "Now Playing" link — only rendered when a track/radio is active. */
 function NowPlayingNavLink({ onNavigate }: { onNavigate?: () => void }) {
@@ -71,6 +73,7 @@ function AppShell() {
   return (
     <AudioPlayerProvider>
       <FavoritesProvider>
+      <DownloadProvider>
       <ImpersonationBanner />
       <div className="app-layout">
         {/* Mobile header with hamburger */}
@@ -110,6 +113,9 @@ function AppShell() {
             </NavLink>
             <NavLink to="/history" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               📜 History
+            </NavLink>
+            <NavLink to="/downloads" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
+              📥 Downloads
             </NavLink>
             <NavLink to="/radios" onClick={closeSidebar} className={({ isActive }) => isActive ? 'active' : ''}>
               📻 Radios
@@ -151,12 +157,14 @@ function AppShell() {
             <Route path="/sessions" element={<SessionsPage />} />
             <Route path="/session/:token" element={<SessionPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/downloads" element={<DownloadsPage />} />
             <Route path="/radios" element={<RadiosPage />} />
             <Route path="/users" element={<UsersPage />} />
           </Routes>
         </main>
         <PlayerBar />
       </div>
+      </DownloadProvider>
       </FavoritesProvider>
     </AudioPlayerProvider>
   );

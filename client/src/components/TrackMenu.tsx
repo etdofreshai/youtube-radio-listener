@@ -1,17 +1,22 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import AddToPlaylistModal from './AddToPlaylistModal';
+import { useDownloads } from '../context/DownloadContext';
+import type { Track } from '../types';
 
 interface TrackMenuProps {
   trackId: string;
   trackTitle: string;
   youtubeUrl?: string;
   className?: string;
+  /** Full track object — needed for download functionality */
+  track?: Track;
 }
 
-export default function TrackMenu({ trackId, trackTitle, youtubeUrl, className }: TrackMenuProps) {
+export default function TrackMenu({ trackId, trackTitle, youtubeUrl, className, track }: TrackMenuProps) {
   const [open, setOpen] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { isTrackDownloaded, isTrackDownloading, startDownload, removeDownload } = useDownloads();
 
   const toggle = useCallback(() => setOpen(prev => !prev), []);
 
@@ -83,6 +88,24 @@ export default function TrackMenu({ trackId, trackTitle, youtubeUrl, className }
                 <span className="track-menu-item-icon">▶️</span>
                 Open on YouTube
               </a>
+            )}
+            {track && !track.isLiveStream && track.audioStatus === 'ready' && (
+              isTrackDownloaded(trackId) ? (
+                <button className="track-menu-item" onClick={() => { setOpen(false); removeDownload(trackId); }} role="menuitem">
+                  <span className="track-menu-item-icon">🗑️</span>
+                  Remove Download
+                </button>
+              ) : isTrackDownloading(trackId) ? (
+                <button className="track-menu-item" disabled role="menuitem">
+                  <span className="track-menu-item-icon">⬇️</span>
+                  Downloading…
+                </button>
+              ) : (
+                <button className="track-menu-item" onClick={() => { setOpen(false); startDownload(track); }} role="menuitem">
+                  <span className="track-menu-item-icon">📥</span>
+                  Download Offline
+                </button>
+              )
             )}
             <button className="track-menu-item" onClick={handleShare} role="menuitem">
               <span className="track-menu-item-icon">🔗</span>
