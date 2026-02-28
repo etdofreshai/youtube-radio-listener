@@ -42,6 +42,7 @@ export default function NowPlayingPage() {
     currentTime,
     duration,
     volume,
+    isMuted,
     shuffle,
     loopMode,
     pause,
@@ -49,6 +50,7 @@ export default function NowPlayingPage() {
     stop,
     seek,
     setVolume,
+    toggleMute,
     playNext,
     playPrev,
     updateCurrentTrack,
@@ -348,16 +350,26 @@ export default function NowPlayingPage() {
           </div>
 
           <div className="now-playing-volume">
-            <span className="now-playing-vol-icon">{volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}</span>
+            <button
+              className="btn-icon now-playing-mute-btn"
+              onClick={toggleMute}
+              title={isMuted ? 'Unmute' : 'Mute'}
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
+              aria-pressed={isMuted}
+            >
+              {isMuted ? '🔇' : volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}
+            </button>
             <input
               type="range"
-              className="now-playing-vol-slider"
+              className={`now-playing-vol-slider${isMuted ? ' now-playing-vol-slider-muted' : ''}`}
               min={0}
               max={200}
               value={volume}
+              disabled={isMuted}
               onChange={e => setVolume(Number(e.target.value))}
+              title={isMuted ? 'Muted' : `${volume}%`}
             />
-            <span className="now-playing-vol-label">{volume}%</span>
+            <span className="now-playing-vol-label" style={{ opacity: isMuted ? 0.4 : 1 }}>{volume}%</span>
           </div>
         </div>
       </div>

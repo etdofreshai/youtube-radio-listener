@@ -190,6 +190,109 @@ describe('Accessibility labels', () => {
   });
 });
 
+// ── Mute toggle ──────────────────────────────────────────────────────────────
+
+interface MuteState {
+  isMuted: boolean;
+  volume: number;
+  preMuteVolume: number;
+}
+
+function toggleMuteLogic(isMuted: boolean, volume: number, preMuteVolume: number = volume): MuteState {
+  if (isMuted) {
+    // Unmuting: restore pre-mute volume (clamped 0-200)
+    const restored = Math.min(200, Math.max(0, preMuteVolume));
+    return { isMuted: false, volume: restored, preMuteVolume };
+  } else {
+    // Muting: save current volume, set to 0
+    return { isMuted: true, volume: 0, preMuteVolume: volume };
+  }
+}
+
+function muteIcon(isMuted: boolean, volume: number): string {
+  if (isMuted) return '🔇';
+  if (volume > 100) return '🔊⚡';
+  if (volume > 0) return '🔊';
+  return '🔇';
+}
+
+function muteAriaLabel(isMuted: boolean): string {
+  return isMuted ? 'Unmute' : 'Mute';
+}
+
+describe('Mute toggle', () => {
+  it('muting sets isMuted=true and volume=0', () => {
+    const result = toggleMuteLogic(false, 80);
+    assert.strictEqual(result.isMuted, true);
+    assert.strictEqual(result.volume, 0);
+  });
+
+  it('muting saves pre-mute volume', () => {
+    const result = toggleMuteLogic(false, 80);
+    assert.strictEqual(result.preMuteVolume, 80);
+  });
+
+  it('unmuting restores previous volume', () => {
+    const result = toggleMuteLogic(true, 0, 80);
+    assert.strictEqual(result.isMuted, false);
+    assert.strictEqual(result.volume, 80);
+  });
+
+  it('muting preserves boosted volume (>100)', () => {
+    const result = toggleMuteLogic(false, 150);
+    assert.strictEqual(result.preMuteVolume, 150);
+  });
+
+  it('double toggle returns to original state', () => {
+    const step1 = toggleMuteLogic(false, 75);
+    const step2 = toggleMuteLogic(step1.isMuted, step1.volume, step1.preMuteVolume);
+    assert.strictEqual(step2.isMuted, false);
+    assert.strictEqual(step2.volume, 75);
+  });
+
+  it('unmute clamps restored volume to 200 max', () => {
+    const result = toggleMuteLogic(true, 0, 250);
+    assert.strictEqual(result.volume, 200);
+  });
+
+  it('unmute clamps restored volume to 0 min', () => {
+    const result = toggleMuteLogic(true, 0, -10);
+    assert.strictEqual(result.volume, 0);
+  });
+
+  it('muting at volume 0 keeps preMuteVolume as 0', () => {
+    const result = toggleMuteLogic(false, 0);
+    assert.strictEqual(result.isMuted, true);
+    assert.strictEqual(result.preMuteVolume, 0);
+  });
+});
+
+describe('Mute icon and aria-label', () => {
+  it('shows 🔇 when muted (any volume)', () => {
+    assert.strictEqual(muteIcon(true, 80), '🔇');
+  });
+
+  it('shows 🔊 when unmuted and volume > 0', () => {
+    assert.strictEqual(muteIcon(false, 80), '🔊');
+  });
+
+  it('shows 🔊⚡ when unmuted and volume > 100', () => {
+    assert.strictEqual(muteIcon(false, 150), '🔊⚡');
+  });
+
+  it('shows 🔇 when unmuted but volume is 0', () => {
+    assert.strictEqual(muteIcon(false, 0), '🔇');
+  });
+
+  it('aria-label is "Mute" when not muted', () => {
+    assert.strictEqual(muteAriaLabel(false), 'Mute');
+  });
+
+  it('aria-label is "Unmute" when muted', () => {
+    assert.strictEqual(muteAriaLabel(true), 'Unmute');
+  });
+});
+
 // ── Add to playlist submission flow ──────────────────────────────────────────
 
 describe('Add to playlist data flow', () => {

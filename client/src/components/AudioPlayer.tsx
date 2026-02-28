@@ -12,6 +12,7 @@ interface AudioPlayerState {
   currentTime: number;
   duration: number;
   volume: number;
+  isMuted: boolean;
   radioLoading: boolean;
   radioError: string | null;
   shuffle: boolean;
@@ -26,6 +27,7 @@ interface AudioPlayerActions {
   stop: () => void;
   seek: (time: number) => void;
   setVolume: (vol: number) => void;
+  toggleMute: () => void;
   playNext: () => void;
   playPrev: () => void;
   /** Patch fields on currentTrack in-place (e.g. after video download completes). */
@@ -59,6 +61,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(100);
+  const [isMuted, setIsMuted] = useState(false);
+  const preMuteVolumeRef = useRef<number>(100);
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [shuffle, setShuffle] = useState(false);
   const [loopMode, setLoopMode] = useState<LoopMode>('off');
@@ -109,11 +113,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
     audio.src = getPlaybackUrl(track);
     const vol = track.volume ?? volume;
-    // Use GainNode for volume — supports 0-200% (gain 0.0-2.0)
-    if (gainRef.current) {
-      gainRef.current.gain.value = vol / 100;
-    }
     setVolumeState(vol);
+    // Use GainNode for volume — supports 0-200% (gain 0.0-2.0); respect mute
+    if (gainRef.current) {
+      gainRef.current.gain.value = isMuted ? 0 : vol / 100;
+    }
     setCurrentTrack(track);
     setCurrentRadio(null);
 
@@ -123,7 +127,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     }
 
     audio.play().catch(err => console.error('Play failed:', err));
-  }, [volume]);
+  }, [volume, isMuted]);
 
   const playRadio = useCallback(async (station: RadioStation) => {
     const audio = audioRef.current;
@@ -178,9 +182,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       audio.addEventListener('playing', playingHandler, { once: true });
 
       audio.src = streamUrl;
-      // Reset to current volume for radio
+      // Reset to current volume for radio; respect mute
       if (gainRef.current) {
-        gainRef.current.gain.value = volume / 100;
+        gainRef.current.gain.value = isMuted ? 0 : volume / 100;
       }
 
       await audio.play();
@@ -189,7 +193,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       setRadioError(err?.message || 'Failed to play radio stream');
       setRadioLoading(false);
     }
-  }, [volume]);
+  }, [volume, isMuted]);
 
   const pause = useCallback(() => {
     audioRef.current?.pause();
@@ -226,6 +230,22 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       gainRef.current.gain.value = clamped / 100;
     }
   }, []);
+
+  const toggleMute = useCallback(() => {
+    if (isMuted) {
+      // Unmuting: restore pre-mute volume
+      const restored = Math.min(200, Math.max(0, preMuteVolumeRef.current));
+      setVolumeState(restored);
+      if (gainRef.current) gainRef.current.gain.value = restored / 100;
+      setIsMuted(false);
+    } else {
+      // Muting: save current volume, zero gain
+      preMuteVolumeRef.current = volume;
+      setVolumeState(0);
+      if (gainRef.current) gainRef.current.gain.value = 0;
+      setIsMuted(true);
+    }
+  }, [isMuted, volume]);
 
   // Handle endTimeSec — stop at specified end time and auto-advance
   useEffect(() => {
@@ -313,10 +333,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   return (
     <AudioPlayerContext.Provider value={{
-      currentTrack, currentRadio, isPlaying, currentTime, duration, volume,
+      currentTrack, currentRadio, isPlaying, currentTime, duration, volume, isMuted,
       radioLoading, radioError,
       shuffle, loopMode,
-      play, playRadio, pause, resume, stop, seek, setVolume, setPlaylist, playNext, playPrev,
+      play, playRadio, pause, resume, stop, seek, setVolume, toggleMute, setPlaylist, playNext, playPrev,
       updateCurrentTrack, toggleShuffle, cycleLoopMode,
     }}>
       {children}
@@ -365,10 +385,10 @@ function LoopButton({ mode, onClick }: { mode: LoopMode; onClick: () => void }) 
 
 export function PlayerBar() {
   const {
-    currentTrack, currentRadio, isPlaying, currentTime, duration, volume,
+    currentTrack, currentRadio, isPlaying, currentTime, duration, volume, isMuted,
     radioLoading, radioError,
     shuffle, loopMode,
-    pause, resume, stop, seek, setVolume, playNext, playPrev,
+    pause, resume, stop, seek, setVolume, toggleMute, playNext, playPrev,
     toggleShuffle, cycleLoopMode,
   } = useAudioPlayer();
 
@@ -424,17 +444,26 @@ export function PlayerBar() {
         </div>
 
         <div className="player-volume">
-          <span>{volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}</span>
+          <button
+            className="btn-icon player-mute-btn"
+            onClick={toggleMute}
+            title={isMuted ? 'Unmute' : 'Mute'}
+            aria-label={isMuted ? 'Unmute' : 'Mute'}
+            aria-pressed={isMuted}
+          >
+            {isMuted ? '🔇' : volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}
+          </button>
           <input
             type="range"
-            className="player-volume-slider"
+            className={`player-volume-slider${isMuted ? ' player-volume-slider-muted' : ''}`}
             min={0}
             max={200}
             value={volume}
+            disabled={isMuted}
             onChange={e => setVolume(Number(e.target.value))}
-            title={`${volume}%${volume > 100 ? ' (boosted — may clip)' : ''}`}
+            title={isMuted ? 'Muted' : `${volume}%${volume > 100 ? ' (boosted — may clip)' : ''}`}
           />
-          <span style={{ fontSize: '0.7rem', minWidth: 36, textAlign: 'right' }}>{volume}%</span>
+          <span style={{ fontSize: '0.7rem', minWidth: 36, textAlign: 'right', opacity: isMuted ? 0.4 : 1 }}>{volume}%</span>
         </div>
       </div>
     );
@@ -485,17 +514,26 @@ export function PlayerBar() {
       )}
 
       <div className="player-volume">
-        <span>{volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}</span>
+        <button
+          className="btn-icon player-mute-btn"
+          onClick={toggleMute}
+          title={isMuted ? 'Unmute' : 'Mute'}
+          aria-label={isMuted ? 'Unmute' : 'Mute'}
+          aria-pressed={isMuted}
+        >
+          {isMuted ? '🔇' : volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}
+        </button>
         <input
           type="range"
-          className="player-volume-slider"
+          className={`player-volume-slider${isMuted ? ' player-volume-slider-muted' : ''}`}
           min={0}
           max={200}
           value={volume}
+          disabled={isMuted}
           onChange={e => setVolume(Number(e.target.value))}
-          title={`${volume}%${volume > 100 ? ' (boosted — may clip)' : ''}`}
+          title={isMuted ? 'Muted' : `${volume}%${volume > 100 ? ' (boosted — may clip)' : ''}`}
         />
-        <span style={{ fontSize: '0.7rem', minWidth: 36, textAlign: 'right' }}>{volume}%</span>
+        <span style={{ fontSize: '0.7rem', minWidth: 36, textAlign: 'right', opacity: isMuted ? 0.4 : 1 }}>{volume}%</span>
       </div>
 
       <TrackMenu
