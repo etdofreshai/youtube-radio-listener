@@ -138,6 +138,77 @@ All user actions are recorded in the `events` table:
 | `playlist.track_added` / `playlist.track_removed` | Playlist tracks changed |
 | `playlist.reordered` | Playlist track order changed |
 | `favorite.added` / `favorite.removed` | Favorites changed |
+| `session.created` / `session.ended` | Session lifecycle |
+| `session.joined` / `session.left` | Session membership |
+| `session.play` / `session.pause` / `session.seek` | Playback control |
+| `session.set_track` / `session.next` / `session.previous` | Track navigation |
+
+## Linkable Entities
+
+Everything has a stable URL via slug or token:
+
+| Entity | URL Pattern | Example |
+|---|---|---|
+| Track | `/api/tracks/:idOrSlug` | `/api/tracks/rick-astley-never-gonna-give-you-up` |
+| Artist | `/api/artists/:idOrSlug` | `/api/artists/rick-astley` |
+| Album | `/api/albums/:idOrSlug` | `/api/albums/rick-astley-whenever-you-need-somebody` |
+| Playlist | `/api/playlists/:idOrSlug` | `/api/playlists/chill-vibes` |
+| Session | `/api/sessions/:token` | `/api/sessions/74d9a906-f240-4d74-84b1-b0a5c61b08ab` |
+
+Slugs are auto-generated from names/titles. UUIDs also work for all endpoints.
+
+## Shared Play Sessions
+
+Synchronized listening rooms where multiple users share playback state.
+
+### How It Works
+
+1. **Create** a session → get a shareable UUID token
+2. **Share** the link (`/session/:token`) with others
+3. **Members** join by visiting the link
+4. **Anyone** can control playback (play/pause/seek/next/previous)
+5. State syncs via polling (2s interval, designed for future WebSocket upgrade)
+6. **Owner** can regenerate the token (invalidates old links) or end the session
+
+### Session State Model
+
+```
+session_state
+├── current_track_id    → which track is playing
+├── is_playing          → play/pause
+├── position_sec        → playback position (seconds)
+├── position_updated_at → timestamp for drift calculation
+├── queue               → ordered track IDs
+└── updated_by          → who last changed state
+```
+
+Clients calculate actual position: `positionSec + (now - positionUpdatedAt)` when `isPlaying`.
+
+### Session API
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/sessions` | Create session `{ name?, playlistId?, queue? }` |
+| GET | `/api/sessions/mine` | List current user's sessions |
+| GET | `/api/sessions/:token` | Get session + state + members |
+| POST | `/api/sessions/:token/join` | Join session |
+| POST | `/api/sessions/:token/leave` | Leave session |
+| GET | `/api/sessions/:token/state` | Poll current playback state |
+| PUT | `/api/sessions/:token/state` | Update state `{ action, trackId?, positionSec?, queue? }` |
+| POST | `/api/sessions/:token/regenerate` | New token (owner only) |
+| POST | `/api/sessions/:token/end` | End session (owner only) |
+| GET | `/api/sessions/:token/events` | Session event history |
+| GET | `/api/sessions/:token/members` | List members |
+
+**State actions:** `play`, `pause`, `seek`, `set_track`, `next`, `previous`, `update_queue`
+
+### Security Considerations
+
+- **Session tokens are UUIDs** — not guessable (122 bits of entropy)
+- **No auth yet** — anyone with the token can join and control playback
+- Token regeneration invalidates old links immediately (404)
+- Session events are logged for audit trail
+- **Future:** Add real user auth, permissions (view-only vs. DJ role), rate limiting
 
 ### User Model
 
@@ -197,6 +268,23 @@ A default "local" user (`00000000-0000-0000-0000-000000000001`) is seeded for pr
 | GET | `/api/favorites` | List favorites (with track data) |
 | POST | `/api/favorites` | Add favorite `{ trackId }` |
 | DELETE | `/api/favorites/:trackId` | Remove favorite |
+| GET | `/api/artists` | List all artists |
+| GET | `/api/artists/:idOrSlug` | Get artist by ID or slug |
+| POST | `/api/artists` | Create artist `{ name }` |
+| PUT | `/api/artists/:id` | Update artist |
+| GET | `/api/albums` | List all albums |
+| GET | `/api/albums/:idOrSlug` | Get album by ID or slug |
+| POST | `/api/albums` | Create album `{ title, artistId? }` |
+| POST | `/api/sessions` | Create play session |
+| GET | `/api/sessions/mine` | List user's sessions |
+| GET | `/api/sessions/:token` | Get session details |
+| POST | `/api/sessions/:token/join` | Join session |
+| POST | `/api/sessions/:token/leave` | Leave session |
+| GET | `/api/sessions/:token/state` | Get playback state |
+| PUT | `/api/sessions/:token/state` | Update playback `{ action, ... }` |
+| POST | `/api/sessions/:token/regenerate` | New share token |
+| POST | `/api/sessions/:token/end` | End session |
+| GET | `/api/sessions/:token/events` | Session event log |
 | GET | `/api/events` | Event history (paginated, filterable) |
 | GET | `/api/events/my` | Current user's event history |
 | GET | `/api/audio/:trackId` | Stream track audio |

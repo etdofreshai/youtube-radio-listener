@@ -11,7 +11,8 @@
     "song:discover": "tsx src/song-explorations/index.ts discover",
     "song:import": "tsx src/song-explorations/index.ts import",
     "song:status": "tsx src/song-explorations/index.ts status",
-    "song:cron": "tsx src/song-explorations/index.ts cron"
+    "song:cron": "tsx src/song-explorations/index.ts cron",
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
