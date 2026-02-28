@@ -96,6 +96,22 @@ a:hover {
   color: var(--text-primary);
 }
 
+/* "Now Playing" sidebar link — pulsing accent color when active */
+.sidebar-nav a.now-playing-nav-link {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sidebar-nav a.now-playing-nav-link:hover {
+  background: var(--bg-hover);
+  color: var(--accent-hover);
+}
+
+.sidebar-nav a.active.now-playing-nav-link {
+  background: var(--accent-dim);
+  color: white;
+}
+
 .sidebar-nav a.active {
   color: var(--accent);
 }
@@ -1112,6 +1128,74 @@ a:hover {
 @keyframes pulse-badge {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* ---------- Live Stream Badges ---------- */
+
+/* Inline LIVE badge (track rows, player bar title) */
+.badge-live {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  animation: pulse-live 2s ease-in-out infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+  text-transform: uppercase;
+}
+
+/* Larger variant for NowPlayingPage headings */
+.badge-live-lg {
+  font-size: 0.8rem;
+  padding: 2px 10px;
+  border-radius: 6px;
+}
+
+/* Small icon variant (e.g., compact list columns) */
+.badge-live-sm {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: pulse-live 2s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+/* Pulsing "● LIVE" inline indicator (player progress area) */
+.badge-live-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ef4444;
+  letter-spacing: 0.08em;
+  animation: pulse-live 1.2s ease-in-out infinite;
+  text-transform: uppercase;
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Live progress placeholder (replaces seek bar for live streams) */
+.player-progress-live {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ---------- Bottom Player Bar ---------- */
@@ -2854,6 +2938,7 @@ a:hover {
 }
 
 /* ========== Tracks Page Mode Toggle ========== */
+/* Scoped under .mode-toggle to avoid collision with .now-playing-mode-toggle */
 
 .mode-toggle {
   display: inline-flex;
@@ -2864,7 +2949,7 @@ a:hover {
   flex-shrink: 0;
 }
 
-.mode-toggle-btn {
+.mode-toggle .mode-toggle-btn {
   padding: 5px 14px;
   background: transparent;
   border: none;
@@ -2875,12 +2960,12 @@ a:hover {
   white-space: nowrap;
 }
 
-.mode-toggle-btn:hover {
+.mode-toggle .mode-toggle-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
-.mode-toggle-btn.active {
+.mode-toggle .mode-toggle-btn.active {
   background: var(--accent);
   color: #fff;
   font-weight: 600;
@@ -3410,4 +3495,374 @@ a:hover {
   width: 95%;
   max-height: 90vh;
   overflow-y: auto;
+}
+
+/* ============================================================
+   Auth / Password Gate
+   ============================================================ */
+
+.gate-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.gate-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 2.5rem;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.gate-logo {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.gate-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.gate-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  text-align: center;
+  margin: 0;
+}
+
+.gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.gate-input {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.gate-input:focus {
+  border-color: var(--border-focus);
+}
+
+.gate-error {
+  color: var(--danger);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.gate-submit {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.gate-submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.gate-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ============================================================
+   User Selector (identity picker)
+   ============================================================ */
+
+.user-select-list {
+  list-style: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.user-select-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: left;
+}
+.user-select-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.user-select-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.user-select-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  flex: 1;
+}
+
+.user-select-handle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* ============================================================
+   Sidebar user indicator
+   ============================================================ */
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+  overflow: hidden;
+}
+
+.sidebar-user-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebar-user-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.sidebar-user-logout {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.sidebar-user-logout:hover {
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   Users Page
+   ============================================================ */
+
+.user-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.user-form input,
+.user-form select {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  min-width: 120px;
+}
+.user-form input:focus,
+.user-form select:focus {
+  border-color: var(--border-focus);
+}
+
+.form-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.user-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.user-item {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  transition: border-color 0.15s;
+}
+
+.user-item.user-protected {
+  border-color: var(--accent-dim);
+}
+
+.user-item-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-details {
+  flex: 1;
+  overflow: hidden;
+}
+
+.user-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.2rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-protected {
+  background: rgba(124, 58, 237, 0.2);
+  color: var(--accent-hover);
+  margin-left: 0.4rem;
+}
+
+.badge-role {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.badge-admin {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--accent-hover);
+}
+
+.user-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.user-edit-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.user-edit-form input,
+.user-edit-form select {
+  padding: 0.4rem 0.65rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  min-width: 110px;
+}
+.user-edit-form input:focus,
+.user-edit-form select:focus {
+  border-color: var(--border-focus);
+}
+
+.user-edit-form input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.user-edit-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: var(--danger) !important;
+  border-color: transparent !important;
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25) !important;
+}
+.btn-danger:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }

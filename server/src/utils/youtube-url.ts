@@ -264,6 +264,31 @@ export function buildWatchUrl(videoId: string): string {
 }
 
 /**
+ * Heuristic check: does the URL *look* like a live stream by its path?
+ *
+ * YouTube /live/VIDEO_ID URLs are created specifically for live broadcasts.
+ * This is a fast, synchronous check that requires no network call or yt-dlp.
+ *
+ * NOTE: A /live/ URL might also be a past broadcast recording — for definitive
+ * detection, rely on yt-dlp metadata (`isLive` flag from fetchYouTubeMetadata).
+ * Use this function only as a UI hint or a first-pass filter.
+ *
+ * @returns true if the URL path starts with /live/ on a valid YouTube host.
+ */
+export function mightBeLiveStreamUrl(url: string): boolean {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    if (!isValidYouTubeHost(parsed.hostname)) return false;
+    // youtube.com/live/VIDEO_ID — canonical live broadcast URL
+    return /^\/live\/[a-zA-Z0-9_-]+/.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Build a canonical YouTube playlist URL from a playlist ID
  */
 export function buildPlaylistUrl(playlistId: string): string {

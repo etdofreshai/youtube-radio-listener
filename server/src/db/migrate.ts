@@ -410,6 +410,48 @@ CREATE TRIGGER update_track_groups_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================
+-- v10: Radio Stations
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS radio_stations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  stream_url TEXT NOT NULL,
+  homepage_url TEXT,
+  description TEXT,
+  image_url TEXT,
+  is_live BOOLEAN NOT NULL DEFAULT true,
+  active BOOLEAN NOT NULL DEFAULT true,
+  tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_radio_stations_slug ON radio_stations(slug);
+CREATE INDEX IF NOT EXISTS idx_radio_stations_active ON radio_stations(active) WHERE active = true;
+
+DROP TRIGGER IF EXISTS update_radio_stations_updated_at ON radio_stations;
+CREATE TRIGGER update_radio_stations_updated_at
+  BEFORE UPDATE ON radio_stations
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- Seed default: Rainwave OCR Remix
+INSERT INTO radio_stations (id, name, slug, stream_url, homepage_url, description, is_live, active, tags)
+VALUES (
+  '00000000-0000-0000-0000-000000000010',
+  'Rainwave OCR Remix',
+  'rainwave-ocr-remix',
+  'http://rainwave.cc/tune_in/2.mp3',
+  'http://rainwave.cc/ocremix/',
+  '24/7 live radio of video game music remixes from OverClocked ReMix, curated by Rainwave.',
+  true,
+  true,
+  '["vgm","remix","ocremix","rainwave"]'::jsonb
+) ON CONFLICT (slug) DO NOTHING;
+
+-- ============================================================
 -- v9: Learning Resources (Learn/Play feature)
 -- ============================================================
 

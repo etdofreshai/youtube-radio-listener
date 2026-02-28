@@ -204,6 +204,12 @@ export default function TracksPage() {
     load();
   };
 
+  const handlePlaylistImported = () => {
+    // Reload tracks so the parent list reflects newly added items.
+    // The form will show the summary and waits for user to click Done.
+    load();
+  };
+
   const handleUpdate = async (data: UpdateTrackInput) => {
     if (!editing) return;
     await api.updateTrack(editing.id, data);
@@ -1371,6 +1377,7 @@ export default function TracksPage() {
               initial={editing ?? undefined}
               onSubmit={editing ? handleUpdate : handleCreate}
               onCancel={() => { setShowForm(false); setEditing(null); }}
+              onPlaylistImported={handlePlaylistImported}
             />
           </div>
         </div>

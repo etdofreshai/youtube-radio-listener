@@ -4,14 +4,42 @@ import type {
   PaginatedEvents, PlaySession, SessionState, SessionMember, SessionFull,
   YouTubeSearchResponse, TrackVariant, CreateVariantInput, UpdateVariantInput,
   LinkTrackInput, LinkedTrackSummary, TrackGroup,
+  RadioStation, CreateRadioStationInput, UpdateRadioStationInput,
+  PlaylistImportSummary,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL || '';
 
+// Import + re-export pure helpers from utils so consumers can import from a single place
+import {
+  LOCAL_STORAGE_USER_KEY,
+  PROTECTED_USERNAME_PATTERN,
+  isProtectedUsername,
+  getActiveUserId,
+  setActiveUserId,
+} from './utils/userAccess';
+export {
+  LOCAL_STORAGE_USER_KEY,
+  PROTECTED_USERNAME_PATTERN,
+  isProtectedUsername,
+  getActiveUserId,
+  setActiveUserId,
+};
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const userId = getActiveUserId();
+  const extraHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (userId) {
+    extraHeaders['X-User-Id'] = userId;
+  }
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      ...extraHeaders,
+      ...(options?.headers as Record<string, string> | undefined),
+    },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -48,6 +76,17 @@ export const getTrack = (id: string) => request<Track>(`/api/tracks/${id}`);
 
 export const createTrack = (data: CreateTrackInput) =>
   request<Track>('/api/tracks', { method: 'POST', body: JSON.stringify(data) });
+
+/**
+ * Import a YouTube playlist URL — returns a structured summary of
+ * added / skipped_existing / failed items.
+ *
+ * This calls the same POST /api/tracks endpoint; the server detects the
+ * playlist URL automatically and returns a PlaylistImportSummary instead
+ * of a single Track.
+ */
+export const importPlaylistUrl = (data: CreateTrackInput) =>
+  request<PlaylistImportSummary>('/api/tracks', { method: 'POST', body: JSON.stringify(data) });
 
 export const updateTrack = (id: string, data: UpdateTrackInput) =>
   request<Track>(`/api/tracks/${id}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -334,3 +373,94 @@ export const unsaveLearningResource = (trackId: string, resourceId: string) =>
 
 export const deleteLearningResource = (trackId: string, resourceId: string) =>
   request<void>(`/api/tracks/${trackId}/learn/${resourceId}`, { method: 'DELETE' });
+
+// ---------- Radio Stations ----------
+
+export const getRadioStations = (includeInactive = false) =>
+  request<RadioStation[]>(`/api/radios${includeInactive ? '?all=true' : ''}`);
+
+export const getRadioStation = (idOrSlug: string) =>
+  request<RadioStation>(`/api/radios/${encodeURIComponent(idOrSlug)}`);
+
+export const createRadioStation = (data: CreateRadioStationInput) =>
+  request<RadioStation>('/api/radios', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateRadioStation = (idOrSlug: string, data: UpdateRadioStationInput) =>
+  request<RadioStation>(`/api/radios/${encodeURIComponent(idOrSlug)}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+
+export const deleteRadioStation = (idOrSlug: string) =>
+  request<void>(`/api/radios/${encodeURIComponent(idOrSlug)}`, { method: 'DELETE' });
+
+export const toggleRadioStation = (idOrSlug: string) =>
+  request<RadioStation>(`/api/radios/${encodeURIComponent(idOrSlug)}/toggle`, { method: 'POST' });
+
+/** Get direct stream URL for a radio station (passed through the browser directly) */
+export function getRadioStreamUrl(station: RadioStation): string {
+  return station.streamUrl;
+}
+
+// ---------- Users ----------
+
+export interface User {
+  id: string;
+  username: string;
+  displayName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  role: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateUserInput {
+  username: string;
+  displayName?: string;
+  email?: string;
+  avatarUrl?: string;
+  role?: string;
+}
+
+export interface UpdateUserInput {
+  username?: string;
+  displayName?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+  role?: string;
+}
+
+export const getUsers = () => request<User[]>('/api/users');
+
+export const getUser = (id: string) => request<User>(`/api/users/${id}`);
+
+export const createUser = (data: CreateUserInput) =>
+  request<User>('/api/users', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateUser = (id: string, data: UpdateUserInput) =>
+  request<User>(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteUser = (id: string) =>
+  request<void>(`/api/users/${id}`, { method: 'DELETE' });
+
+// ---------- Auth ----------
+
+export interface AuthStatusResponse {
+  requiresPassword: boolean;
+}
+
+export interface AuthVerifyResponse {
+  valid: boolean;
+  devMode?: boolean;
+  message?: string;
+  error?: string;
+}
+
+export const getAuthStatus = () => request<AuthStatusResponse>('/api/auth/status');
+
+export const verifyPassword = (password: string) =>
+  request<AuthVerifyResponse>('/api/auth/verify', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });

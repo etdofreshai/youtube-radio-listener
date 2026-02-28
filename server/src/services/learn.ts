@@ -265,6 +265,12 @@ export async function searchLearningResources(trackId: string): Promise<SearchLe
       allResources.push(resource);
     }
 
+    // If no web search results, fall back to static provider links
+    if (allResources.length === 0) {
+      const staticResources = generateStaticResources(track);
+      allResources.push(...staticResources);
+    }
+
     // Filter and dedupe
     const filtered = filterJunk(dedupeResources(allResources));
 
@@ -343,10 +349,6 @@ interface WebSearchResult {
 }
 
 async function performWebSearch(query: string): Promise<WebSearchResult[]> {
-  // Try to use the internal search capability
-  // For now, return empty - will be enhanced when web search is available
-  // In production, this would call Brave Search API or similar
-
   // Use mock results for development/testing
   if (process.env.NODE_ENV === 'test' || process.env.MOCK_LEARN_SEARCH === 'true') {
     return getMockSearchResults(query);
@@ -354,50 +356,226 @@ async function performWebSearch(query: string): Promise<WebSearchResult[]> {
 
   // Try to fetch from a search endpoint if configured
   const searchApiUrl = process.env.SEARCH_API_URL;
-  const searchApiKey = process.env.SEARCH_API_KEY;
+  const searchApiKey = process.env.BRAVE_SEARCH_API_KEY || process.env.SEARCH_API_KEY;
 
-  if (!searchApiUrl) {
-    console.warn('[learn] No SEARCH_API_URL configured, returning empty results');
-    return [];
+  if (searchApiUrl) {
+    try {
+      const response = await fetch(`${searchApiUrl}?q=${encodeURIComponent(query)}&count=20`, {
+        headers: {
+          'Accept': 'application/json',
+          ...(searchApiKey ? { 'X-Subscription-Token': searchApiKey } : {}),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Search API returned ${response.status}`);
+      }
+
+      const data: any = await response.json();
+
+      // Handle Brave Search API format
+      if (data.web?.results) {
+        return data.web.results.map((r: any) => ({
+          title: r.title || '',
+          url: r.url || '',
+          snippet: r.description || '',
+        }));
+      }
+
+      // Handle generic format
+      if (Array.isArray(data.results)) {
+        return data.results.map((r: any) => ({
+          title: r.title || '',
+          url: r.url || r.link || '',
+          snippet: r.snippet || r.description || '',
+        }));
+      }
+
+      return [];
+    } catch (err) {
+      console.error('[learn] Web search failed, falling back to static resources:', err);
+      // Fall through to static fallback
+    }
+  } else {
+    console.info('[learn] No SEARCH_API_URL/BRAVE_SEARCH_API_KEY configured — using static provider links');
   }
 
-  try {
-    const response = await fetch(`${searchApiUrl}?q=${encodeURIComponent(query)}&count=20`, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Api-Key': searchApiKey || '',
-      },
-    });
+  // No search API or search failed — return empty (static resources handled in searchLearningResources)
+  return [];
+}
 
-    if (!response.ok) {
-      throw new Error(`Search API returned ${response.status}`);
-    }
+/**
+ * Generate static learning resource links for a track using known provider URL patterns.
+ * Used as a fallback when no web search API is configured.
+ * Legal-safe: only generates search/discovery URLs — no pirated content.
+ */
+export function generateStaticResources(track: Track): LearningResource[] {
+  const title = (track.title || '').trim();
+  const artist = (track.artist || '').trim();
 
-    const data: any = await response.json();
+  if (!title) return [];
 
-    // Handle Brave Search API format
-    if (data.web?.results) {
-      return data.web.results.map((r: any) => ({
-        title: r.title || '',
-        url: r.url || '',
-        snippet: r.description || '',
-      }));
-    }
+  const now = new Date().toISOString();
+  const slug = (s: string) => encodeURIComponent(s.replace(/\s+/g, '+'));
+  const q = (extra: string) => slug(`${title} ${artist} ${extra}`.trim());
+  const results: LearningResource[] = [];
 
-    // Handle generic format
-    if (Array.isArray(data.results)) {
-      return data.results.map((r: any) => ({
-        title: r.title || '',
-        url: r.url || r.link || '',
-        snippet: r.snippet || r.description || '',
-      }));
-    }
+  // — Guitar Tabs —
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'guitar-tabs',
+    title: `${title} — Guitar Tab (Ultimate Guitar)`,
+    provider: 'ultimate-guitar.com',
+    url: `https://www.ultimate-guitar.com/search.php?search_type=title&value=${slug(`${title} ${artist}`)}`,
+    snippet: 'Search Ultimate Guitar for accurate guitar tablature and chords for this song.',
+    confidence: 'high',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
 
-    return [];
-  } catch (err) {
-    console.error('[learn] Web search failed:', err);
-    return [];
-  }
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'guitar-tabs',
+    title: `${title} — Interactive Tab (Songsterr)`,
+    provider: 'songsterr.com',
+    url: `https://www.songsterr.com/a/wa/search?pattern=${q('')}`,
+    snippet: 'Interactive guitar tabs with synchronized audio playback on Songsterr.',
+    confidence: 'high',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // — Guitar Chords —
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'guitar-chords',
+    title: `${title} — Guitar Chords (Ultimate Guitar)`,
+    provider: 'ultimate-guitar.com',
+    url: `https://www.ultimate-guitar.com/search.php?search_type=title&value=${slug(`${title} ${artist} chords`)}`,
+    snippet: 'Chord charts with diagrams and lyrics synchronized to chord changes.',
+    confidence: 'high',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'guitar-chords',
+    title: `${title} — Chords (E-Chords)`,
+    provider: 'e-chords.com',
+    url: `https://www.e-chords.com/search-all/${slug(`${title} ${artist}`)}`,
+    snippet: 'Guitar and ukulele chord charts with transposition tools.',
+    confidence: 'medium',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // — Piano / Keys —
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'piano-keys',
+    title: `${title} — Piano Chords (Flowkey)`,
+    provider: 'flowkey.com',
+    url: `https://www.flowkey.com/en/songs#query=${q('piano')}`,
+    snippet: 'Interactive piano lessons with real-time feedback on Flowkey.',
+    confidence: 'medium',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'piano-keys',
+    title: `${title} — Piano Tutorial (YouTube Search)`,
+    provider: 'youtube.com',
+    url: `https://www.youtube.com/results?search_query=${q('piano tutorial')}`,
+    snippet: 'Find piano tutorials and chord walkthroughs on YouTube.',
+    confidence: 'medium',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // — Sheet Music —
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'sheet-music',
+    title: `${title} — Sheet Music (MuseScore)`,
+    provider: 'musescore.com',
+    url: `https://musescore.com/sheetmusic?text=${q('')}`,
+    snippet: 'Free and premium sheet music and scores on MuseScore.',
+    confidence: 'high',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'sheet-music',
+    title: `${title} — Sheet Music (Musicnotes)`,
+    provider: 'musicnotes.com',
+    url: `https://www.musicnotes.com/search/go?w=${q('')}`,
+    snippet: 'Officially licensed digital sheet music for purchase and download.',
+    confidence: 'high',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // — Tutorials —
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'tutorial',
+    title: `${title} — Guitar Tutorial (YouTube)`,
+    provider: 'youtube.com',
+    url: `https://www.youtube.com/results?search_query=${q('guitar tutorial')}`,
+    snippet: 'Video guitar lessons and tutorials on YouTube.',
+    confidence: 'high',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  results.push({
+    id: '',
+    trackId: track.id,
+    resourceType: 'tutorial',
+    title: `${title} — JustinGuitar Lesson`,
+    provider: 'justinguitar.com',
+    url: `https://www.justinguitar.com/songs#${slug(`${title} ${artist}`)}`,
+    snippet: 'Free guitar lessons and song tutorials from JustinGuitar.',
+    confidence: 'medium',
+    isSaved: false,
+    searchQuery: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return results;
 }
 
 /**
@@ -411,12 +589,12 @@ function getMockSearchResults(query: string): WebSearchResult[] {
   if (lowerQuery.includes('tab') || lowerQuery.includes('guitar')) {
     results.push(
       {
-        title: `${query} Guitar Tab | Ultimate Guitar`,
+        title: `Guitar Tab | Ultimate Guitar`,
         url: `https://tabs.ultimate-guitar.com/tab/${query.replace(/\s+/g, '-').toLowerCase()}`,
         snippet: 'Official guitar tab with accurate transcription. Includes standard notation and tablature.',
       },
       {
-        title: `${query} - Songsterr Tabs`,
+        title: `Songsterr Tabs`,
         url: `https://www.songsterr.com/a/wsa/${query.replace(/\s+/g, '-').toLowerCase()}-tab`,
         snippet: 'Interactive guitar tab with playback. Learn to play with synchronized audio.',
       }
@@ -426,12 +604,12 @@ function getMockSearchResults(query: string): WebSearchResult[] {
   if (lowerQuery.includes('chord')) {
     results.push(
       {
-        title: `${query} Chords | Ultimate Guitar`,
+        title: `Chords | Ultimate Guitar`,
         url: `https://tabs.ultimate-guitar.com/tab/${query.replace(/\s+/g, '-').toLowerCase()}-chords`,
         snippet: 'Chord diagrams with lyrics. Easy to follow chord progression.',
       },
       {
-        title: `${query} - E-Chords`,
+        title: `E-Chords`,
         url: `https://www.e-chords.com/chords/${query.replace(/\s+/g, '-').toLowerCase()}`,
         snippet: 'Complete chord chart with variations and voicings.',
       }
@@ -441,7 +619,7 @@ function getMockSearchResults(query: string): WebSearchResult[] {
   if (lowerQuery.includes('piano') || lowerQuery.includes('keyboard')) {
     results.push(
       {
-        title: `${query} Piano Chords Tutorial`,
+        title: `Piano Chords Tutorial`,
         url: `https://www.flowkey.com/en/s/${query.replace(/\s+/g, '-').toLowerCase()}`,
         snippet: 'Learn to play on piano with interactive lessons.',
       }
@@ -451,8 +629,8 @@ function getMockSearchResults(query: string): WebSearchResult[] {
   if (lowerQuery.includes('tutorial') || lowerQuery.includes('how to')) {
     results.push(
       {
-        title: `How to Play ${query} - Guitar Tutorial`,
-        url: `https://www.youtube.com/watch?v=example123`,
+        title: `Guitar Tutorial on YouTube`,
+        url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
         snippet: 'Step by step guitar tutorial with on-screen tabs.',
       }
     );
@@ -462,4 +640,4 @@ function getMockSearchResults(query: string): WebSearchResult[] {
 }
 
 // Export for testing
-export { extractProvider, calculateConfidence, filterJunk, dedupeResources, groupResources, inferResourceType };
+export { extractProvider, calculateConfidence, filterJunk, dedupeResources, groupResources, inferResourceType, sortResources };

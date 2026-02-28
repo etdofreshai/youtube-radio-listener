@@ -396,6 +396,35 @@ export function clearCachedLearningResources(trackId: string) {
 }
 
 // ============================================================
+// Radio Stations (postgres-only; memory falls back to empty/throw)
+// ============================================================
+
+export function getAllRadioStations(includeInactive = false) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getAllRadioStations(includeInactive);
+}
+
+export function getRadioStation(idOrSlug: string) {
+  if (!usePostgres) return Promise.resolve(null);
+  return pgStore.getRadioStation(idOrSlug);
+}
+
+export function createRadioStation(...args: Parameters<typeof pgStore.createRadioStation>) {
+  if (!usePostgres) throw new Error('Radio stations require PostgreSQL');
+  return pgStore.createRadioStation(...args);
+}
+
+export function updateRadioStation(...args: Parameters<typeof pgStore.updateRadioStation>) {
+  if (!usePostgres) throw new Error('Radio stations require PostgreSQL');
+  return pgStore.updateRadioStation(...args);
+}
+
+export function deleteRadioStation(idOrSlug: string) {
+  if (!usePostgres) throw new Error('Radio stations require PostgreSQL');
+  return pgStore.deleteRadioStation(idOrSlug);
+}
+
+// ============================================================
 // Meta
 // ============================================================
 

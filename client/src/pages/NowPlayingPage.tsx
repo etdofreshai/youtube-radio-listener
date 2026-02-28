@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer } from '../components/AudioPlayer';
-import { getVideoUrl, downloadVideo as apiDownloadVideo } from '../api';
+import { getVideoUrl, downloadVideo as apiDownloadVideo, getTrack } from '../api';
 
 export type MediaMode = 'video' | 'artwork' | 'lyrics';
 
@@ -47,6 +47,7 @@ export default function NowPlayingPage() {
     setVolume,
     playNext,
     playPrev,
+    updateCurrentTrack,
   } = useAudioPlayer();
 
   const [mediaMode, setMediaModeState] = useState<MediaMode>(loadMediaMode);
@@ -56,6 +57,40 @@ export default function NowPlayingPage() {
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
 
   const hasVideo = currentTrack?.videoStatus === 'ready';
+
+  // ── Poll for video status updates while a download is in progress ──────────
+  // currentTrack is set once when play() is called and never auto-refreshes,
+  // so we poll the API to detect when videoStatus changes to 'ready'/'error'.
+  useEffect(() => {
+    const id = currentTrack?.id;
+    const status = currentTrack?.videoStatus;
+    if (!id || (status !== 'downloading' && status !== 'pending')) return;
+
+    const POLL_MS = 3_000;
+    const timer = setInterval(async () => {
+      try {
+        const fresh = await getTrack(id);
+        updateCurrentTrack({
+          videoStatus: fresh.videoStatus,
+          videoFilename: fresh.videoFilename ?? undefined,
+          videoError: fresh.videoError ?? undefined,
+        });
+        if (fresh.videoStatus === 'ready') {
+          // Auto-switch to video mode when download completes
+          setMediaModeState('video');
+          saveMediaMode('video');
+          clearInterval(timer);
+        } else if (fresh.videoStatus === 'error') {
+          clearInterval(timer);
+        }
+      } catch {
+        // Network error — keep polling
+      }
+    }, POLL_MS);
+
+    return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack?.id, currentTrack?.videoStatus]);
 
   const setMediaMode = useCallback((m: MediaMode) => {
     setMediaModeState(m);
@@ -104,14 +139,18 @@ export default function NowPlayingPage() {
   const handleDownloadVideo = useCallback(async () => {
     if (!currentTrack || currentTrack.isLiveStream) return;
     setVideoDownloading(true);
+    // Optimistic update — show spinner immediately without waiting for server ACK
+    updateCurrentTrack({ videoStatus: 'downloading' });
     try {
       await apiDownloadVideo(currentTrack.id);
+      // Server returns track with videoStatus 'downloading'; polling effect takes over
     } catch {
-      // keep UI stable
+      // Revert optimistic update on error
+      updateCurrentTrack({ videoStatus: 'none' });
     } finally {
       setVideoDownloading(false);
     }
-  }, [currentTrack]);
+  }, [currentTrack, updateCurrentTrack]);
 
   if (!currentTrack) {
     return (
@@ -212,7 +251,15 @@ export default function NowPlayingPage() {
 
           {mediaMode === 'video' && !hasVideo && !track.isLiveStream && (
             <div className="now-playing-status-line">
-              <span>Video unavailable — showing thumbnail.</span>
+              {track.videoStatus === 'downloading' && (
+                <span>⬇️ Downloading video… will switch automatically when ready.</span>
+              )}
+              {track.videoStatus === 'error' && (
+                <span title={track.videoError ?? undefined}>⚠️ Video download failed — showing thumbnail.</span>
+              )}
+              {(track.videoStatus === 'none' || track.videoStatus === 'pending') && (
+                <span>Video unavailable — showing thumbnail.</span>
+              )}
             </div>
           )}
         </div>
@@ -234,7 +281,7 @@ export default function NowPlayingPage() {
               onClick={handleDownloadVideo}
               disabled={videoDownloading || track.videoStatus === 'downloading' || track.videoStatus === 'pending'}
             >
-              {videoDownloading ? '⬇️ Requesting…' : '🎬 Download Video'}
+              {(videoDownloading || track.videoStatus === 'downloading') ? '⬇️ Downloading…' : track.videoStatus === 'error' ? '🔁 Retry Download' : '🎬 Download Video'}
             </button>
           )}
 

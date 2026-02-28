@@ -17,6 +17,7 @@ import type {
   PaginationParams, PaginatedResponse,
   SortableTrackField, SortDirection,
   LearningResource, CreateLearningResourceInput,
+  RadioStation, CreateRadioStationInput, UpdateRadioStationInput,
 } from '../types';
 import { trackSlug, artistSlug, albumSlug, slugify } from '../utils/slug';
 
@@ -2138,4 +2139,98 @@ export async function clearCachedLearningResources(trackId: string): Promise<voi
     `DELETE FROM track_learning_resources WHERE track_id = $1 AND is_saved = false`,
     [trackId]
   );
+}
+
+// ============================================================
+// Radio Stations
+// ============================================================
+
+function rowToRadioStation(row: any): RadioStation {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    streamUrl: row.stream_url,
+    homepageUrl: row.homepage_url || null,
+    description: row.description || null,
+    imageUrl: row.image_url || null,
+    isLive: row.is_live ?? true,
+    active: row.active ?? true,
+    tags: Array.isArray(row.tags) ? row.tags : (row.tags ? JSON.parse(row.tags) : []),
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+export async function getAllRadioStations(includeInactive = false): Promise<RadioStation[]> {
+  const pool = getPool();
+  const where = includeInactive ? '' : 'WHERE active = true';
+  const { rows } = await pool.query(
+    `SELECT * FROM radio_stations ${where} ORDER BY name ASC`
+  );
+  return rows.map(rowToRadioStation);
+}
+
+export async function getRadioStation(idOrSlug: string): Promise<RadioStation | null> {
+  const pool = getPool();
+  const isUuidVal = isUuid(idOrSlug);
+  const { rows } = await pool.query(
+    `SELECT * FROM radio_stations WHERE ${isUuidVal ? 'id' : 'slug'} = $1`,
+    [idOrSlug]
+  );
+  return rows.length > 0 ? rowToRadioStation(rows[0]) : null;
+}
+
+export async function createRadioStation(input: CreateRadioStationInput): Promise<RadioStation> {
+  const pool = getPool();
+  const id = uuidv4();
+  const slug = slugify(input.name);
+  const tags = JSON.stringify(input.tags ?? []);
+  const { rows } = await pool.query(`
+    INSERT INTO radio_stations (id, name, slug, stream_url, homepage_url, description, image_url, is_live, active, tags)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING *
+  `, [
+    id, input.name, slug, input.streamUrl,
+    input.homepageUrl ?? null, input.description ?? null, input.imageUrl ?? null,
+    input.isLive ?? true, input.active ?? true, tags,
+  ]);
+  return rowToRadioStation(rows[0]);
+}
+
+export async function updateRadioStation(idOrSlug: string, input: UpdateRadioStationInput): Promise<RadioStation | null> {
+  const pool = getPool();
+  const isUuidVal = isUuid(idOrSlug);
+
+  const sets: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+
+  if (input.name !== undefined) { sets.push(`name = $${idx++}`); values.push(input.name); }
+  if (input.streamUrl !== undefined) { sets.push(`stream_url = $${idx++}`); values.push(input.streamUrl); }
+  if (input.homepageUrl !== undefined) { sets.push(`homepage_url = $${idx++}`); values.push(input.homepageUrl); }
+  if (input.description !== undefined) { sets.push(`description = $${idx++}`); values.push(input.description); }
+  if (input.imageUrl !== undefined) { sets.push(`image_url = $${idx++}`); values.push(input.imageUrl); }
+  if (input.isLive !== undefined) { sets.push(`is_live = $${idx++}`); values.push(input.isLive); }
+  if (input.active !== undefined) { sets.push(`active = $${idx++}`); values.push(input.active); }
+  if (input.tags !== undefined) { sets.push(`tags = $${idx++}`); values.push(JSON.stringify(input.tags)); }
+
+  if (sets.length === 0) return getRadioStation(idOrSlug);
+
+  values.push(idOrSlug);
+  const { rows } = await pool.query(
+    `UPDATE radio_stations SET ${sets.join(', ')} WHERE ${isUuidVal ? 'id' : 'slug'} = $${idx} RETURNING *`,
+    values
+  );
+  return rows.length > 0 ? rowToRadioStation(rows[0]) : null;
+}
+
+export async function deleteRadioStation(idOrSlug: string): Promise<boolean> {
+  const pool = getPool();
+  const isUuidVal = isUuid(idOrSlug);
+  const { rowCount } = await pool.query(
+    `DELETE FROM radio_stations WHERE ${isUuidVal ? 'id' : 'slug'} = $1`,
+    [idOrSlug]
+  );
+  return (rowCount ?? 0) > 0;
 }

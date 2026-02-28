@@ -1,8 +1,6 @@
 /**
- * Tests for the TrackForm "Swap title ↔ artist" convenience action.
- *
- * The swap is pure client-side state: swapping sets title = old artist and
- * artist = old title without touching any external state.
+ * Tests for the TrackForm "Swap title ↔ artist" convenience action,
+ * and for YouTube URL detection logic used in the form.
  *
  * Run (from repo root):
  *   node --import ./client/node_modules/tsx/dist/esm/index.mjs --test \
@@ -14,6 +12,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { detectYouTubeUrl, isPlaylistImportUrl } from '../utils/youtubeUrl.js';
 
 // ── Pure swap helper (mirrors the logic in handleSwapTitleArtist) ────────────
 
@@ -83,8 +82,48 @@ describe('swapTitleArtist – TrackForm convenience action', () => {
     const title = 'Title';
     const artist = 'Artist';
     swapTitleArtist(title, artist);
-    // Strings are immutable in JS, but ensure we're not relying on side effects
     assert.strictEqual(title, 'Title');
     assert.strictEqual(artist, 'Artist');
+  });
+});
+
+// ── URL detection (mirrors what TrackForm uses) ──────────────────────────────
+
+describe('TrackForm URL auto-detection', () => {
+  it('detects a single video URL → isPlaylist = false', () => {
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    assert.strictEqual(isPlaylistImportUrl(url), false);
+    assert.strictEqual(detectYouTubeUrl(url).kind, 'single_video');
+  });
+
+  it('detects a pure playlist URL → isPlaylist = true', () => {
+    const url = 'https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf';
+    assert.strictEqual(isPlaylistImportUrl(url), true);
+    assert.strictEqual(detectYouTubeUrl(url).kind, 'playlist');
+  });
+
+  it('detects a video-with-playlist URL → isPlaylist = true', () => {
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf';
+    assert.strictEqual(isPlaylistImportUrl(url), true);
+    assert.strictEqual(detectYouTubeUrl(url).kind, 'video_with_playlist');
+  });
+
+  it('detects an invalid URL → isPlaylist = false', () => {
+    assert.strictEqual(isPlaylistImportUrl('not a url'), false);
+  });
+
+  it('detects empty string → isPlaylist = false', () => {
+    assert.strictEqual(isPlaylistImportUrl(''), false);
+  });
+
+  it('does not treat a channel URL as a playlist', () => {
+    const url = 'https://www.youtube.com/@SomeChannel';
+    assert.strictEqual(isPlaylistImportUrl(url), false);
+    assert.strictEqual(detectYouTubeUrl(url).kind, 'not_supported');
+  });
+
+  it('youtu.be short URL with list= param → isPlaylist = true', () => {
+    const url = 'https://youtu.be/dQw4w9WgXcQ?list=PLabc123';
+    assert.strictEqual(isPlaylistImportUrl(url), true);
   });
 });

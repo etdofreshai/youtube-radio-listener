@@ -1,4 +1,35 @@
 export type AudioStatus = 'pending' | 'downloading' | 'ready' | 'error';
+
+// ---------- Playlist Import ----------
+
+export interface SkippedExistingItem {
+  videoId: string;
+  title: string | null;
+  existingTrackId: string;
+}
+
+export interface FailedImportItem {
+  videoId: string;
+  title: string | null;
+  reason: string;
+}
+
+export interface PlaylistImportSummary {
+  /** Tracks successfully created in this run. */
+  added: Track[];
+  /** Items skipped because the video already exists as a variant. */
+  skipped_existing: SkippedExistingItem[];
+  /** Items that failed for any other reason. */
+  failed: FailedImportItem[];
+  /** Total items considered (after cap). */
+  total: number;
+  /** Human-readable playlist title, if available. */
+  playlistTitle: string | null;
+  /** True when the playlist was longer than the per-run cap. */
+  truncated: boolean;
+  /** The cap that was applied. */
+  limit: number;
+}
 export type VideoStatus = 'none' | 'pending' | 'downloading' | 'ready' | 'error';
 
 export type EnrichmentStatus =
@@ -407,6 +438,45 @@ export interface CreatePlaylistInput {
   name: string;
   description?: string;
   trackIds?: string[];
+}
+
+// ---------- Radio Stations ----------
+
+export interface RadioStation {
+  id: string;
+  name: string;
+  slug: string;
+  streamUrl: string;
+  homepageUrl: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  isLive: boolean;
+  active: boolean;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRadioStationInput {
+  name: string;
+  streamUrl: string;
+  homepageUrl?: string;
+  description?: string;
+  imageUrl?: string;
+  isLive?: boolean;
+  active?: boolean;
+  tags?: string[];
+}
+
+export interface UpdateRadioStationInput {
+  name?: string;
+  streamUrl?: string;
+  homepageUrl?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  isLive?: boolean;
+  active?: boolean;
+  tags?: string[];
 }
 
 // ---------- Events / History ----------

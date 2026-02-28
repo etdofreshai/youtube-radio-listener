@@ -1,10 +1,11 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import type { Track } from '../types';
+import type { Track, RadioStation } from '../types';
 import { getPlaybackUrl } from '../api';
 
 interface AudioPlayerState {
   currentTrack: Track | null;
+  currentRadio: RadioStation | null;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -13,6 +14,7 @@ interface AudioPlayerState {
 
 interface AudioPlayerActions {
   play: (track: Track) => void;
+  playRadio: (station: RadioStation) => void;
   pause: () => void;
   resume: () => void;
   stop: () => void;
@@ -20,6 +22,8 @@ interface AudioPlayerActions {
   setVolume: (vol: number) => void;
   playNext: () => void;
   playPrev: () => void;
+  /** Patch fields on currentTrack in-place (e.g. after video download completes). */
+  updateCurrentTrack: (updates: Partial<Track>) => void;
 }
 
 interface AudioPlayerContextType extends AudioPlayerState, AudioPlayerActions {
@@ -40,6 +44,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  const [currentRadio, setCurrentRadio] = useState<RadioStation | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -98,6 +103,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     }
     setVolumeState(vol);
     setCurrentTrack(track);
+    setCurrentRadio(null);
 
     // If track has startTimeSec, seek to it
     if (track.startTimeSec) {
@@ -105,6 +111,26 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     }
 
     audio.play().catch(err => console.error('Play failed:', err));
+  }, [volume]);
+
+  const playRadio = useCallback((station: RadioStation) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    // Resume AudioContext if suspended (browser autoplay policy)
+    if (audioCtxRef.current?.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+
+    audio.src = station.streamUrl;
+    // Reset to current volume for radio
+    if (gainRef.current) {
+      gainRef.current.gain.value = volume / 100;
+    }
+    setCurrentRadio(station);
+    setCurrentTrack(null);
+
+    audio.play().catch(err => console.error('Radio play failed:', err));
   }, [volume]);
 
   const pause = useCallback(() => {
@@ -122,6 +148,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     audio.currentTime = 0;
     audio.src = '';
     setCurrentTrack(null);
+    setCurrentRadio(null);
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
@@ -164,6 +191,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (idx > 0) play(readyTracks[idx - 1]);
   }, [currentTrack, playlist, play]);
 
+  /** Patch fields on currentTrack without restarting playback. */
+  const updateCurrentTrack = useCallback((updates: Partial<Track>) => {
+    setCurrentTrack(prev => prev ? { ...prev, ...updates } : null);
+  }, []);
+
   // Auto-advance: when track ends, play next
   useEffect(() => {
     onEndedRef.current = () => {
@@ -180,8 +212,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   return (
     <AudioPlayerContext.Provider value={{
-      currentTrack, isPlaying, currentTime, duration, volume,
-      play, pause, resume, stop, seek, setVolume, setPlaylist, playNext, playPrev,
+      currentTrack, currentRadio, isPlaying, currentTime, duration, volume,
+      play, playRadio, pause, resume, stop, seek, setVolume, setPlaylist, playNext, playPrev,
+      updateCurrentTrack,
     }}>
       {children}
     </AudioPlayerContext.Provider>
@@ -199,21 +232,77 @@ function formatTime(sec: number): string {
 
 export function PlayerBar() {
   const {
-    currentTrack, isPlaying, currentTime, duration, volume,
+    currentTrack, currentRadio, isPlaying, currentTime, duration, volume,
     pause, resume, stop, seek, setVolume, playNext, playPrev,
   } = useAudioPlayer();
 
-  if (!currentTrack) return null;
+  if (!currentTrack && !currentRadio) return null;
+
+  // Radio station bar
+  if (currentRadio) {
+    return (
+      <div className="player-bar">
+        <div className="player-track-info">
+          <Link to="/radios" className="player-now-playing-link" title="Open Radios">
+            <div className="player-title">
+              <span className="badge-live" title="Live Radio">LIVE</span>
+              {currentRadio.name}
+            </div>
+            <div className="player-artist">📻 Radio Station</div>
+          </Link>
+        </div>
+
+        <div className="player-controls">
+          {isPlaying ? (
+            <button className="btn-icon player-play-btn" onClick={pause} title="Pause">⏸</button>
+          ) : (
+            <button className="btn-icon player-play-btn" onClick={resume} title="Play">▶️</button>
+          )}
+          <button className="btn-icon" onClick={stop} title="Stop">⏹</button>
+        </div>
+
+        <div className="player-progress player-progress-live">
+          <span className="badge-live-pulse" title="Streaming live">● LIVE</span>
+          {currentRadio.homepageUrl && (
+            <a
+              href={currentRadio.homepageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="radio-homepage-link"
+              title="Open station homepage"
+              style={{ marginLeft: '0.75rem', fontSize: '0.75rem', opacity: 0.7 }}
+            >
+              🔗 Homepage
+            </a>
+          )}
+        </div>
+
+        <div className="player-volume">
+          <span>{volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}</span>
+          <input
+            type="range"
+            className="player-volume-slider"
+            min={0}
+            max={200}
+            value={volume}
+            onChange={e => setVolume(Number(e.target.value))}
+            title={`${volume}%${volume > 100 ? ' (boosted — may clip)' : ''}`}
+          />
+          <span style={{ fontSize: '0.7rem', minWidth: 36, textAlign: 'right' }}>{volume}%</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="player-bar">
       <div className="player-track-info">
         <Link to="/now-playing" className="player-now-playing-link" title="Open Now Playing">
           <div className="player-title">
-            {currentTrack.isLiveStream && <span className="badge-live" title="Live Stream">LIVE</span>}
-            {currentTrack.title}
+            {currentTrack!.isLiveStream && <span className="badge-live" title="Live Stream">LIVE</span>}
+            {currentTrack!.title}
           </div>
-          <div className="player-artist">{currentTrack.artist}</div>
+          <div className="player-artist">{currentTrack!.artist}</div>
         </Link>
       </div>
 
@@ -228,7 +317,7 @@ export function PlayerBar() {
         <button className="btn-icon" onClick={stop} title="Stop">⏹</button>
       </div>
 
-      {currentTrack.isLiveStream ? (
+      {currentTrack!.isLiveStream ? (
         <div className="player-progress player-progress-live">
           <span className="badge-live-pulse" title="Streaming live">● LIVE</span>
         </div>
