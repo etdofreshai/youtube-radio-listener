@@ -32,5 +32,4 @@ COPY --from=server-build /app/server/dist ./server/dist
 # Client build output
 COPY --from=client-build /app/client/dist ./client/dist
 
-EXPOSE 3001
 CMD ["node", "server/dist/index.js"]
