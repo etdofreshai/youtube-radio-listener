@@ -28,9 +28,8 @@ export function loadConfig(): AppConfig {
     enabled: envBool('RECOMMENDATION_ENABLED', true),
     intervalMinutes: envInt('RECOMMENDATION_INTERVAL_MINUTES', 60),
     addPerRunCap: envInt('RECOMMENDATION_ADD_PER_RUN', 5),
-    cloudAgentOAuthToken: envStr('CLOUD_AGENT_OAUTH_TOKEN', ''),
-    model: envStr('RECOMMENDATION_MODEL', 'gpt-4o'),
-    endpoint: envStr('CLOUD_AGENT_ENDPOINT', 'https://api.openai.com/v1/chat/completions'),
+    claudeCodeOAuthToken: envStr('CLAUDE_CODE_OAUTH_TOKEN', ''),
+    model: envStr('CLAUDE_CODE_RECOMMENDATION_MODEL', 'haiku'),
   };
 
   return {

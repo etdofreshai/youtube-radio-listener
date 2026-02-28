@@ -128,12 +128,10 @@ export interface RecommendationConfig {
   intervalMinutes: number;
   /** Maximum tracks to add per recommendation run. Default: 5 */
   addPerRunCap: number;
-  /** Cloud Agent SDK OAuth token for authentication */
-  cloudAgentOAuthToken: string;
-  /** Model to use for recommendations */
+  /** Claude Code OAuth token for authentication */
+  claudeCodeOAuthToken: string;
+  /** Model to use for recommendations (e.g. haiku, sonnet, opus). Default: haiku */
   model: string;
-  /** API endpoint for Cloud Agent SDK */
-  endpoint: string;
 }
 
 export interface AppConfig {

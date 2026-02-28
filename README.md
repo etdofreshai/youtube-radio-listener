@@ -118,9 +118,8 @@ npm start
 | `RECOMMENDATION_ENABLED` | `true` | Enable AI-powered recommendations |
 | `RECOMMENDATION_INTERVAL_MINUTES` | `60` | How often to run recommendations (hourly) |
 | `RECOMMENDATION_ADD_PER_RUN` | `5` | Max tracks to add per recommendation run |
-| `RECOMMENDATION_MODEL` | `gpt-4o` | AI model for recommendations |
-| `CLOUD_AGENT_OAUTH_TOKEN` | _(empty)_ | OAuth token for Cloud Agent SDK authentication |
-| `CLOUD_AGENT_ENDPOINT` | OpenAI API | API endpoint for Cloud Agent SDK |
+| `CLAUDE_CODE_RECOMMENDATION_MODEL` | `haiku` | AI model for recommendations (haiku/sonnet/opus) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | _(empty)_ | OAuth token for Claude Code authentication |
 
 ## Song Explorations — AI Recommendations
 
@@ -142,7 +141,7 @@ Automated music discovery using AI-powered recommendations based on your existin
 
 ### AI Response Format
 
-The Cloud Agent SDK returns structured JSON that the importer can parse reliably:
+Claude Code returns structured JSON that the importer can parse reliably:
 
 ```json
 {

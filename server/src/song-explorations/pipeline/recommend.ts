@@ -107,9 +107,8 @@ export async function runRecommendations(
   // Create adapter and get recommendations
   const adapterConfig: CloudAgentConfig = {
     enabled: recommendation.enabled,
-    oauthToken: recommendation.cloudAgentOAuthToken,
+    oauthToken: recommendation.claudeCodeOAuthToken,
     model: recommendation.model,
-    endpoint: recommendation.endpoint,
     timeoutMs: 30000,
   };
 

@@ -124,17 +124,15 @@ export interface CloudAgentAdapter {
 }
 
 /**
- * Configuration for the Cloud Agent SDK adapter.
+ * Configuration for the Claude Code recommendation adapter.
  */
 export interface CloudAgentConfig {
   /** Whether recommendations are enabled */
   enabled: boolean;
-  /** OAuth token for Cloud Agent SDK authentication */
+  /** OAuth token for Claude Code authentication */
   oauthToken: string;
-  /** Model to use for recommendations (e.g., 'gpt-4o', 'claude-3-opus') */
+  /** Model to use for recommendations (e.g., 'haiku', 'sonnet', 'opus'). Default: haiku */
   model: string;
-  /** API endpoint for the Cloud Agent SDK */
-  endpoint: string;
   /** Request timeout in milliseconds */
   timeoutMs: number;
 }
@@ -185,36 +183,39 @@ export class LiveCloudAgentAdapter implements CloudAgentAdapter {
     }
 
     if (!this.config.oauthToken) {
-      throw new Error('Cloud Agent SDK OAuth token not configured');
+      throw new Error('Claude Code OAuth token not configured (set CLAUDE_CODE_OAUTH_TOKEN)');
     }
 
+    // Claude Code API endpoint
+    const endpoint = 'https://api.anthropic.com/v1/messages';
     const prompt = buildRecommendationPrompt(existingTracks, maxRecommendations);
 
     try {
-      const response = await fetch(this.config.endpoint, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.config.oauthToken}`,
+          'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          prompt,
           model: this.config.model,
           max_tokens: 4096,
-          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: prompt }],
         }),
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error');
-        throw new Error(`Cloud Agent SDK error: ${response.status} - ${errorText}`);
+        throw new Error(`Claude Code API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       
-      // Extract content from response (format varies by provider)
-      const rawContent = data.choices?.[0]?.message?.content 
+      // Extract content from Anthropic response format
+      const rawContent = data.content?.[0]?.text
+        || data.choices?.[0]?.message?.content 
         || data.content 
         || data.response 
         || JSON.stringify(data);
@@ -223,7 +224,7 @@ export class LiveCloudAgentAdapter implements CloudAgentAdapter {
       return parseAndValidateResponse(rawContent);
     } catch (err) {
       if (err instanceof Error && err.name === 'TimeoutError') {
-        throw new Error('Cloud Agent SDK request timed out');
+        throw new Error('Claude Code API request timed out');
       }
       throw err;
     }

@@ -41,32 +41,32 @@ describe('loadConfig', () => {
     delete process.env.RECOMMENDATION_ENABLED;
     delete process.env.RECOMMENDATION_INTERVAL_MINUTES;
     delete process.env.RECOMMENDATION_ADD_PER_RUN;
-    delete process.env.RECOMMENDATION_MODEL;
+    delete process.env.CLAUDE_CODE_RECOMMENDATION_MODEL;
     
     const config = loadConfig();
     assert.equal(config.recommendation.enabled, true, 'Recommendations should be enabled by default');
     assert.equal(config.recommendation.intervalMinutes, 60, 'Recommendation interval should be 60 minutes');
     assert.equal(config.recommendation.addPerRunCap, 5, 'Should add 5 tracks per run by default');
-    assert.equal(config.recommendation.model, 'gpt-4o', 'Default model should be gpt-4o');
+    assert.equal(config.recommendation.model, 'haiku', 'Default model should be haiku');
   });
 
   it('allows overriding recommendation settings via env', () => {
     process.env.RECOMMENDATION_ENABLED = 'false';
     process.env.RECOMMENDATION_INTERVAL_MINUTES = '120';
     process.env.RECOMMENDATION_ADD_PER_RUN = '10';
-    process.env.RECOMMENDATION_MODEL = 'gpt-4o-mini';
+    process.env.CLAUDE_CODE_RECOMMENDATION_MODEL = 'sonnet';
     
     const config = loadConfig();
     assert.equal(config.recommendation.enabled, false);
     assert.equal(config.recommendation.intervalMinutes, 120);
     assert.equal(config.recommendation.addPerRunCap, 10);
-    assert.equal(config.recommendation.model, 'gpt-4o-mini');
+    assert.equal(config.recommendation.model, 'sonnet');
   });
 
-  it('loads Cloud Agent OAuth token from env', () => {
-    process.env.CLOUD_AGENT_OAUTH_TOKEN = 'test-token-12345';
+  it('loads Claude Code OAuth token from env', () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'test-token-12345';
     const config = loadConfig();
-    assert.equal(config.recommendation.cloudAgentOAuthToken, 'test-token-12345');
+    assert.equal(config.recommendation.claudeCodeOAuthToken, 'test-token-12345');
   });
 });
 
