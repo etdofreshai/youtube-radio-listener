@@ -1,5 +1,7 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer } from '../components/AudioPlayer';
+import { getVideoUrl, downloadVideo as apiDownloadVideo } from '../api';
 
 function formatTime(sec: number): string {
   if (!sec || !isFinite(sec)) return '0:00';
@@ -24,6 +26,69 @@ export default function NowPlayingPage() {
     playNext,
     playPrev,
   } = useAudioPlayer();
+
+  const [theaterMode, setTheaterMode] = useState(false);
+  const [videoDownloading, setVideoDownloading] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const theaterRef = useRef<HTMLDivElement>(null);
+
+  const hasVideo = currentTrack?.videoStatus === 'ready';
+
+  // Sync video playback with audio state
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !hasVideo) return;
+
+    // Mute video — audio comes from the audio player
+    video.muted = true;
+
+    // Sync play/pause
+    if (isPlaying && video.paused) {
+      video.play().catch(() => {});
+    } else if (!isPlaying && !video.paused) {
+      video.pause();
+    }
+  }, [isPlaying, hasVideo]);
+
+  // Sync video seek with audio time (only when difference is noticeable)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !hasVideo) return;
+
+    const drift = Math.abs(video.currentTime - currentTime);
+    if (drift > 1.5) {
+      video.currentTime = currentTime;
+    }
+  }, [currentTime, hasVideo]);
+
+  // Toggle theater mode
+  const toggleTheater = useCallback(() => {
+    setTheaterMode(prev => !prev);
+  }, []);
+
+  // Toggle true browser fullscreen on the video element
+  const toggleFullscreen = useCallback(() => {
+    const el = theaterRef.current || videoRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      el.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  // Handle video download request
+  const handleDownloadVideo = useCallback(async () => {
+    if (!currentTrack) return;
+    setVideoDownloading(true);
+    try {
+      await apiDownloadVideo(currentTrack.id);
+    } catch (err) {
+      console.error('Video download request failed:', err);
+    } finally {
+      setVideoDownloading(false);
+    }
+  }, [currentTrack]);
 
   // ── no-track state ────────────────────────────────────────────────
   if (!currentTrack) {
@@ -50,17 +115,56 @@ export default function NowPlayingPage() {
   const progressPercent =
     duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
+  // Video status indicator
+  const videoStatusLabel = (() => {
+    switch (currentTrack.videoStatus) {
+      case 'none': return null;
+      case 'pending': return '⏳ Video queued';
+      case 'downloading': return '⬇️ Downloading video…';
+      case 'ready': return null; // shown as player
+      case 'error': return `❌ Video error: ${currentTrack.videoError || 'unknown'}`;
+      default: return null;
+    }
+  })();
+
   return (
-    <div className="now-playing-page">
+    <div className={`now-playing-page ${theaterMode ? 'now-playing-theater' : ''}`}>
       {/* Back nav */}
       <button className="btn-icon now-playing-back" onClick={() => navigate(-1)} title="Go back">
         ← Back
       </button>
 
       <div className="now-playing-layout">
-        {/* Artwork */}
-        <div className="now-playing-art-wrap">
-          {artwork ? (
+        {/* Artwork / Video */}
+        <div className="now-playing-art-wrap" ref={theaterRef}>
+          {hasVideo ? (
+            <div className="now-playing-video-container">
+              <video
+                ref={videoRef}
+                className="now-playing-video"
+                src={getVideoUrl(currentTrack.id)}
+                muted
+                playsInline
+                preload="auto"
+              />
+              <div className="now-playing-video-controls">
+                <button
+                  className="btn-icon now-playing-video-btn"
+                  onClick={toggleTheater}
+                  title={theaterMode ? 'Exit theater mode' : 'Theater mode'}
+                >
+                  {theaterMode ? '⊡' : '⊞'}
+                </button>
+                <button
+                  className="btn-icon now-playing-video-btn"
+                  onClick={toggleFullscreen}
+                  title="Fullscreen"
+                >
+                  ⛶
+                </button>
+              </div>
+            </div>
+          ) : artwork ? (
             <div className="now-playing-art">
               <img src={artwork} alt={`${currentTrack.title} artwork`} />
               {artworkSource && (
@@ -86,6 +190,23 @@ export default function NowPlayingPage() {
             )}
             {currentTrack.releaseYear && (
               <p className="now-playing-year">{currentTrack.releaseYear}</p>
+            )}
+          </div>
+
+          {/* Video status / download button */}
+          <div className="now-playing-video-status">
+            {videoStatusLabel && (
+              <span className="now-playing-video-status-text">{videoStatusLabel}</span>
+            )}
+            {!hasVideo && currentTrack.videoStatus !== 'downloading' && currentTrack.videoStatus !== 'pending' && (
+              <button
+                className="btn btn-sm now-playing-video-dl-btn"
+                onClick={handleDownloadVideo}
+                disabled={videoDownloading}
+                title="Download music video"
+              >
+                {videoDownloading ? '⬇️ Requesting…' : '🎬 Download Video'}
+              </button>
             )}
           </div>
 

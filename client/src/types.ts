@@ -1,4 +1,5 @@
 export type AudioStatus = 'pending' | 'downloading' | 'ready' | 'error';
+export type VideoStatus = 'none' | 'pending' | 'downloading' | 'ready' | 'error';
 
 export type EnrichmentStatus =
   | 'none' | 'queued' | 'stage_a' | 'stage_a_done'
@@ -107,6 +108,10 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   audioFilename: string | null;
   duration: number | null;
   lastDownloadAt: string | null;
+  // Video pipeline
+  videoStatus: VideoStatus;
+  videoError: string | null;
+  videoFilename: string | null;
   // Populated relations
   artists?: ArtistSummary[];
   albumName?: string | null;

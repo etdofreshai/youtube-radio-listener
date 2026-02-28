@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as store from '../store';
-import { downloadTrackAudio, refreshTrackAudio } from '../downloader';
+import { downloadTrackAudio, refreshTrackAudio, downloadTrackVideo, deleteTrackVideo } from '../downloader';
 import { enrichTrack, enrichTrackSync, enrichAllTracks, listProviders, budgetTracker } from '../services/enrichment';
 import { getSchedulerStatus, forceTick, startScheduler, stopScheduler } from '../services/scheduler';
 import { fetchYouTubeMetadata, parseArtistTitle, isValidYouTubeUrl, searchYouTube } from '../services/youtube-metadata';
@@ -242,6 +242,9 @@ router.delete('/:id', async (req, res) => {
   const deleted = await store.deleteTrack(id);
   if (!deleted) { res.status(404).json({ error: 'Track not found' }); return; }
 
+  // Clean up video files
+  deleteTrackVideo(id);
+
   // Record event
   const userId = getActorId(req);
   store.recordEvent('track.deleted', {
@@ -285,6 +288,26 @@ router.post('/:id/refresh', async (req, res) => {
   }).catch(() => {});
 
   refreshTrackAudio(id).catch(err => console.error(`[tracks] Refresh failed for ${id}:`, err));
+  res.json(await store.getTrack(id));
+});
+
+// ============================================================
+// Video actions
+// ============================================================
+
+router.post('/:id/download-video', async (req, res) => {
+  const id = paramId(req.params.id);
+  const track = await store.getTrack(id);
+  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  store.recordEvent('track.video_download_started', {
+    userId: getActorId(req),
+    entityType: 'track',
+    entityId: id,
+  }).catch(() => {});
+
+  downloadTrackVideo(id).catch(err => console.error(`[tracks] Video download failed for ${id}:`, err));
+  // Return track immediately (videoStatus will be 'downloading')
   res.json(await store.getTrack(id));
 });
 

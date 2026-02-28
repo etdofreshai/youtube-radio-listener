@@ -11,7 +11,7 @@ import type {
   PlaySession, SessionMember, SessionState, SessionEvent,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
-  AudioStatus, EnrichmentStatus, FieldConfidence,
+  AudioStatus, VideoStatus, EnrichmentStatus, FieldConfidence,
   PaginationParams, PaginatedResponse,
   SortableTrackField, SortDirection,
 } from '../types';
@@ -78,6 +78,10 @@ function rowToTrack(row: any): Track {
     nextEnrichAt: row.next_enrich_at ? (row.next_enrich_at instanceof Date ? row.next_enrich_at.toISOString() : row.next_enrich_at) : null,
     stageACompletedAt: row.stage_a_completed_at ? (row.stage_a_completed_at instanceof Date ? row.stage_a_completed_at.toISOString() : row.stage_a_completed_at) : null,
     stageBCompletedAt: row.stage_b_completed_at ? (row.stage_b_completed_at instanceof Date ? row.stage_b_completed_at.toISOString() : row.stage_b_completed_at) : null,
+    // Video pipeline
+    videoStatus: (row.video_status || 'none') as VideoStatus,
+    videoError: row.video_error || null,
+    videoFilename: row.video_filename || null,
   };
 }
 
@@ -481,6 +485,33 @@ export async function updateTrackAudio(
     fields.audioFilename !== undefined ? fields.audioFilename : null,
     fields.duration !== undefined ? fields.duration : null,
     fields.lastDownloadAt !== undefined ? fields.lastDownloadAt : null,
+  ]);
+
+  return rows.length > 0 ? rowToTrack(rows[0]) : null;
+}
+
+export async function updateTrackVideo(
+  id: string,
+  fields: {
+    videoStatus: VideoStatus;
+    videoError?: string | null;
+    videoFilename?: string | null;
+  }
+): Promise<Track | null> {
+  const pool = getPool();
+
+  const { rows } = await pool.query(`
+    UPDATE tracks
+    SET video_status = $2,
+        video_error = COALESCE($3, video_error),
+        video_filename = COALESCE($4, video_filename)
+    WHERE id = $1
+    RETURNING *
+  `, [
+    id,
+    fields.videoStatus,
+    fields.videoError !== undefined ? fields.videoError : null,
+    fields.videoFilename !== undefined ? fields.videoFilename : null,
   ]);
 
   return rows.length > 0 ? rowToTrack(rows[0]) : null;

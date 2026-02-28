@@ -65,6 +65,7 @@ export default function TracksPage() {
   useEffect(() => {
     const hasActive = tracks.some(t =>
       t.audioStatus === 'downloading' || t.audioStatus === 'pending' ||
+      t.videoStatus === 'downloading' || t.videoStatus === 'pending' ||
       t.enrichmentStatus === 'stage_a' || t.enrichmentStatus === 'stage_b' || t.enrichmentStatus === 'queued'
     );
     if (hasActive && !pollRef.current) {
@@ -116,6 +117,7 @@ export default function TracksPage() {
 
   const handleRefresh = async (id: string) => { await api.refreshTrack(id); setOpenMenuId(null); load(); };
   const handleDownload = async (id: string) => { await api.downloadTrack(id); setOpenMenuId(null); load(); };
+  const handleDownloadVideo = async (id: string) => { await api.downloadVideo(id); setOpenMenuId(null); load(); };
 
   const handleVerify = async (track: Track) => {
     await api.verifyTrack(track.id, !track.verified);
@@ -256,6 +258,11 @@ export default function TracksPage() {
                 <span className="action-menu-icon">⬇️</span> Download
               </button>
             )}
+            {track.videoStatus !== 'ready' && track.videoStatus !== 'downloading' && (
+              <button className="action-menu-item" onClick={() => handleDownloadVideo(track.id)}>
+                <span className="action-menu-icon">🎬</span> Download Video
+              </button>
+            )}
             <div className="action-menu-divider" />
             <button className="action-menu-item action-menu-danger" onClick={() => handleDelete(track.id)}>
               <span className="action-menu-icon">🗑️</span> Delete
@@ -293,6 +300,14 @@ export default function TracksPage() {
                 {track.audioStatus === 'downloading' && <span className="badge badge-downloading">⏳ Downloading…</span>}
                 {track.audioStatus === 'pending' && <span className="badge badge-pending">○ Pending</span>}
                 {track.audioStatus === 'error' && <span className="badge badge-error" title={track.audioError || 'Download failed'}>✕ Error</span>}
+              </dd>
+              <dt>Video Status</dt>
+              <dd>
+                {track.videoStatus === 'ready' && <span className="badge badge-ready">🎬 Ready</span>}
+                {track.videoStatus === 'downloading' && <span className="badge badge-downloading">⏳ Downloading…</span>}
+                {track.videoStatus === 'pending' && <span className="badge badge-pending">○ Pending</span>}
+                {track.videoStatus === 'error' && <span className="badge badge-error" title={track.videoError || 'Download failed'}>✕ Error</span>}
+                {track.videoStatus === 'none' && <span className="badge badge-pending">—</span>}
               </dd>
               {track.verified && (
                 <>

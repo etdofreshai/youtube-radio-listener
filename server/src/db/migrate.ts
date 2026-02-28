@@ -101,6 +101,11 @@ ALTER TABLE tracks ADD COLUMN IF NOT EXISTS artwork_url TEXT;
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS artwork_source TEXT;
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS alternate_links JSONB;
 
+-- Video pipeline
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS video_status TEXT NOT NULL DEFAULT 'none';
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS video_error TEXT;
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS video_filename TEXT;
+
 -- ============================================================
 -- 3. Playlists + playlist_tracks
 -- ============================================================

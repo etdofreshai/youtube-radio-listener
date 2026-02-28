@@ -1618,6 +1618,134 @@ a:hover {
   color: var(--accent);
 }
 
+/* ============================================================
+   Now Playing — Video Player & Theater Mode
+   ============================================================ */
+
+/* Video container in artwork area */
+.now-playing-video-container {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  background: #000;
+}
+
+.now-playing-video {
+  width: 100%;
+  display: block;
+  aspect-ratio: 16/9;
+  object-fit: contain;
+  background: #000;
+}
+
+/* Video overlay controls (theater + fullscreen buttons) */
+.now-playing-video-controls {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.now-playing-video-container:hover .now-playing-video-controls {
+  opacity: 1;
+}
+
+.now-playing-video-btn {
+  background: rgba(0, 0, 0, 0.7) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 4px !important;
+  font-size: 1.2rem !important;
+  padding: 6px 10px !important;
+  cursor: pointer;
+  transition: background 0.15s;
+  line-height: 1;
+}
+
+.now-playing-video-btn:hover {
+  background: rgba(124, 58, 237, 0.8) !important;
+}
+
+/* Video download status */
+.now-playing-video-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.now-playing-video-status-text {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.now-playing-video-dl-btn {
+  font-size: 0.8rem;
+  padding: 4px 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.now-playing-video-dl-btn:hover:not(:disabled) {
+  background: var(--accent-dim);
+  color: white;
+}
+
+.now-playing-video-dl-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Theater mode ── */
+/* Theater mode expands the video to fill more of the viewport
+   while keeping the bottom player bar visible.
+   True browser fullscreen (F11 / Fullscreen API) hides all app chrome
+   including the player bar — that's expected browser behavior.
+   Theater mode is the "best of both worlds": big video + controls. */
+
+.now-playing-theater .now-playing-layout {
+  grid-template-columns: 1fr;
+  max-width: 100%;
+  gap: 24px;
+}
+
+.now-playing-theater .now-playing-art-wrap {
+  position: relative;
+  top: auto;
+  max-width: 100%;
+}
+
+.now-playing-theater .now-playing-video-container {
+  border-radius: var(--radius);
+}
+
+.now-playing-theater .now-playing-video {
+  max-height: calc(100vh - 260px); /* leave room for controls + player bar */
+  width: 100%;
+  aspect-ratio: auto;
+}
+
+.now-playing-theater .now-playing-back {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

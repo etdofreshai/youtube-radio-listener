@@ -93,6 +93,15 @@ export function getAudioUrl(trackId: string): string {
   return `${BASE}/api/audio/${trackId}`;
 }
 
+// Video URL helper
+export function getVideoUrl(trackId: string): string {
+  return `${BASE}/api/video/${trackId}`;
+}
+
+// Video download
+export const downloadVideo = (id: string) =>
+  request<Track>(`/api/tracks/${id}/download-video`, { method: 'POST' });
+
 // Preview URL helper — streams audio directly from YouTube via server proxy
 export function getPreviewUrl(videoId: string): string {
   return `${BASE}/api/preview/${videoId}`;

@@ -1,5 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import TracksPage from './pages/TracksPage';
+import NowPlayingPage from './pages/NowPlayingPage';
 import PlaylistsPage from './pages/PlaylistsPage';
 import PlaylistEditorPage from './pages/PlaylistEditorPage';
 import FavoritesPage from './pages/FavoritesPage';
@@ -45,6 +46,7 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<TracksPage />} />
+            <Route path="/now-playing" element={<NowPlayingPage />} />
             <Route path="/artists" element={<ArtistsPage />} />
             <Route path="/artists/:idOrSlug" element={<ArtistPage />} />
             <Route path="/albums" element={<AlbumsPage />} />

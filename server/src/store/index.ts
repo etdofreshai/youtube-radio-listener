@@ -64,6 +64,10 @@ export function updateTrackAudio(...args: Parameters<typeof memStore.updateTrack
   return usePostgres ? pgStore.updateTrackAudio(...args) : wrap(memStore.updateTrackAudio(...args));
 }
 
+export function updateTrackVideo(...args: Parameters<typeof memStore.updateTrackVideo>) {
+  return usePostgres ? pgStore.updateTrackVideo(...args) : wrap(memStore.updateTrackVideo(...args));
+}
+
 export function updateTrackMetadata(...args: Parameters<typeof memStore.updateTrackMetadata>) {
   return usePostgres ? pgStore.updateTrackMetadata(...args) : wrap(memStore.updateTrackMetadata(...args));
 }

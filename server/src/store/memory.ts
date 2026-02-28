@@ -3,7 +3,7 @@ import type {
   Track, Playlist, Favorite,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
-  AudioStatus, EnrichmentStatus, FieldConfidence,
+  AudioStatus, VideoStatus, EnrichmentStatus, FieldConfidence,
   PaginationParams, PaginatedResponse,
   SortableTrackField, SortDirection,
 } from '../types';
@@ -24,7 +24,8 @@ function defaultMetadata(): Pick<Track,
   'metadataSource' | 'metadataConfidence' | 'fieldConfidences' | 'lastEnrichedAt' |
   'enrichmentStatus' | 'enrichmentAttempts' | 'enrichmentError' |
   'nextEnrichAt' | 'stageACompletedAt' | 'stageBCompletedAt' |
-  'verified' | 'verifiedBy' | 'verifiedAt'
+  'verified' | 'verifiedBy' | 'verifiedAt' |
+  'videoStatus' | 'videoError' | 'videoFilename'
 > {
   return {
     ytChannel: null,
@@ -56,6 +57,9 @@ function defaultMetadata(): Pick<Track,
     verified: false,
     verifiedBy: null,
     verifiedAt: null,
+    videoStatus: 'none',
+    videoError: null,
+    videoFilename: null,
   };
 }
 
@@ -296,6 +300,27 @@ export function updateTrackAudio(
     audioFilename: fields.audioFilename ?? existing.audioFilename,
     duration: fields.duration ?? existing.duration,
     lastDownloadAt: fields.lastDownloadAt ?? existing.lastDownloadAt,
+    updatedAt: new Date().toISOString(),
+  };
+  tracks.set(id, updated);
+  return updated;
+}
+
+export function updateTrackVideo(
+  id: string,
+  fields: {
+    videoStatus: VideoStatus;
+    videoError?: string | null;
+    videoFilename?: string | null;
+  }
+): Track | null {
+  const existing = tracks.get(id);
+  if (!existing) return null;
+  const updated: Track = {
+    ...existing,
+    videoStatus: fields.videoStatus,
+    videoError: fields.videoError ?? existing.videoError,
+    videoFilename: fields.videoFilename ?? existing.videoFilename,
     updatedAt: new Date().toISOString(),
   };
   tracks.set(id, updated);
