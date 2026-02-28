@@ -14,7 +14,10 @@ router.get('/', async (_req: Request, res: Response) => {
 router.get('/:idOrSlug', async (req: Request, res: Response) => {
   const album = await store.getAlbum(p(req.params.idOrSlug));
   if (!album) { res.status(404).json({ error: 'Album not found' }); return; }
-  res.json(album);
+
+  // Include tracks on this album
+  const tracks = await store.getTracksByAlbum(album.id);
+  res.json({ ...album, tracks });
 });
 
 // POST /api/albums

@@ -129,7 +129,7 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/tracks
 router.post('/', async (req, res) => {
-  const { youtubeUrl, title, artist, startTimeSec, endTimeSec, volume, notes } = req.body as CreateTrackInput;
+  const { youtubeUrl, title, artist, artistIds, startTimeSec, endTimeSec, volume, notes } = req.body as CreateTrackInput;
   if (!youtubeUrl) {
     res.status(400).json({ error: 'youtubeUrl is required' });
     return;
@@ -171,6 +171,7 @@ router.post('/', async (req, res) => {
     youtubeUrl,
     title: resolvedTitle,
     artist: resolvedArtist,
+    artistIds,
     startTimeSec,
     endTimeSec,
     volume,
@@ -204,6 +205,7 @@ router.put('/:id', async (req, res) => {
     res.status(400).json({ error: 'volume must be between 0 and 200' });
     return;
   }
+  // Pass the full input including artistIds and albumId
   const track = await store.updateTrack(paramId(req.params.id), input);
   if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
 

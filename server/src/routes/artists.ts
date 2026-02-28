@@ -14,7 +14,10 @@ router.get('/', async (_req: Request, res: Response) => {
 router.get('/:idOrSlug', async (req: Request, res: Response) => {
   const artist = await store.getArtist(p(req.params.idOrSlug));
   if (!artist) { res.status(404).json({ error: 'Artist not found' }); return; }
-  res.json(artist);
+
+  // Include tracks by this artist
+  const tracks = await store.getTracksByArtist(artist.id);
+  res.json({ ...artist, tracks });
 });
 
 // POST /api/artists

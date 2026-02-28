@@ -54,6 +54,38 @@ export interface TrackVerification {
   verifiedAt: string | null;
 }
 
+// ---------- Artist / Album ----------
+
+export interface Artist {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl: string | null;
+  bio: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Album {
+  id: string;
+  title: string;
+  slug: string;
+  artistId: string | null;
+  artistName: string | null;
+  releaseYear: number | null;
+  artworkUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Lightweight artist reference embedded in track responses */
+export interface ArtistSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
 // ---------- Track ----------
 
 export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentState, TrackVerification {
@@ -75,6 +107,10 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   audioFilename: string | null;
   duration: number | null;
   lastDownloadAt: string | null;
+  // Populated relations
+  artists?: ArtistSummary[];
+  albumName?: string | null;
+  albumSlug?: string | null;
 }
 
 // ---------- Pagination / Sort ----------
@@ -208,6 +244,7 @@ export interface CreateTrackInput {
   youtubeUrl: string;
   title?: string;
   artist?: string;
+  artistIds?: string[];
   startTimeSec?: number | null;
   endTimeSec?: number | null;
   volume?: number;
@@ -218,6 +255,8 @@ export interface UpdateTrackInput {
   youtubeUrl?: string;
   title?: string;
   artist?: string;
+  artistIds?: string[];
+  albumId?: string | null;
   startTimeSec?: number | null;
   endTimeSec?: number | null;
   volume?: number;

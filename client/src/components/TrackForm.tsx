@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import type { Track, CreateTrackInput } from '../types';
+import { useState, useEffect } from 'react';
+import type { Track, CreateTrackInput, Artist } from '../types';
 import { parseEndTime } from '../utils/endTimeParse';
+import * as api from '../api';
 
 interface TrackFormProps {
   initial?: Track;
@@ -20,17 +21,23 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // Multi-artist state
+  const [allArtists, setAllArtists] = useState<Artist[]>([]);
+  const [selectedArtistIds, setSelectedArtistIds] = useState<string[]>(
+    initial?.artists?.map(a => a.id) ?? []
+  );
+  const [artistSearch, setArtistSearch] = useState('');
+  const [showArtistDropdown, setShowArtistDropdown] = useState(false);
+
   const isEditing = !!initial;
   const hasUrl = youtubeUrl.trim().length > 0;
 
-  /** Swap title and artist form values in-place (client-side only, not saved until submit). */
-  const handleSwapTitleArtist = () => {
-    const prevTitle = title;
-    setTitle(artist);
-    setArtist(prevTitle);
-  };
+  // Load available artists
+  useEffect(() => {
+    api.getArtists().then(setAllArtists).catch(() => {});
+  }, []);
 
-  /** Validate end-time text on every change; clear error once input becomes valid or empty. */
+  /** Validate end-time text on every change */
   const handleEndTimeChange = (raw: string) => {
     setEndTimeText(raw);
     if (!raw.trim()) {
@@ -45,6 +52,23 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
     }
   };
 
+  const handleAddArtist = (artistId: string) => {
+    if (!selectedArtistIds.includes(artistId)) {
+      setSelectedArtistIds(prev => [...prev, artistId]);
+    }
+    setArtistSearch('');
+    setShowArtistDropdown(false);
+  };
+
+  const handleRemoveArtist = (artistId: string) => {
+    setSelectedArtistIds(prev => prev.filter(id => id !== artistId));
+  };
+
+  const filteredArtists = allArtists.filter(a =>
+    !selectedArtistIds.includes(a.id) &&
+    a.name.toLowerCase().includes(artistSearch.toLowerCase())
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -53,13 +77,11 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
       return;
     }
 
-    // When editing, title and artist are still required (track already exists)
     if (isEditing && (!title.trim() || !artist.trim())) {
       setError('Title and artist are required when editing.');
       return;
     }
 
-    // Validate and parse end-time field
     const endTimeParsed = parseEndTime(endTimeText);
     if (endTimeParsed && !endTimeParsed.ok) {
       setEndTimeError(endTimeParsed.error);
@@ -78,9 +100,13 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
         notes: notes.trim(),
       };
 
-      // Only include title/artist if user provided them (let server auto-detect if empty)
       if (title.trim()) data.title = title.trim();
       if (artist.trim()) data.artist = artist.trim();
+
+      // Include linked artist IDs if any are selected
+      if (selectedArtistIds.length > 0) {
+        data.artistIds = selectedArtistIds;
+      }
 
       await onSubmit(data);
     } catch (err: unknown) {
@@ -109,26 +135,61 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
         )}
       </div>
 
-      <div className="form-row" style={{ alignItems: 'flex-end' }}>
+      <div className="form-row">
         <div className="form-group">
           <label>Title{isEditing ? ' *' : ' (optional — auto-detected)'}</label>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder={isEditing ? 'Song title' : 'Leave blank to auto-detect'} />
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={handleSwapTitleArtist}
-          aria-label="Swap title and artist"
-          title="Swap title ↔ artist"
-          style={{ flexShrink: 0, marginBottom: 4, whiteSpace: 'nowrap' }}
-        >
-          ⇄ Swap
-        </button>
         <div className="form-group">
           <label>Artist{isEditing ? ' *' : ' (optional — auto-detected)'}</label>
           <input value={artist} onChange={e => setArtist(e.target.value)} placeholder={isEditing ? 'Artist name' : 'Leave blank to auto-detect'} />
         </div>
       </div>
+
+      {/* Multi-artist linking */}
+      {allArtists.length > 0 && (
+        <div className="form-group">
+          <label>Link to Artists (optional)</label>
+          {/* Selected artist chips */}
+          {selectedArtistIds.length > 0 && (
+            <div className="artist-chips">
+              {selectedArtistIds.map((id, idx) => {
+                const a = allArtists.find(x => x.id === id);
+                return a ? (
+                  <span key={id} className="artist-chip">
+                    {idx === 0 ? '★' : '+'} {a.name}
+                    <button type="button" className="artist-chip-remove" onClick={() => handleRemoveArtist(id)}>✕</button>
+                  </span>
+                ) : null;
+              })}
+            </div>
+          )}
+          {/* Search/add dropdown */}
+          <div className="artist-search-wrapper">
+            <input
+              type="text"
+              value={artistSearch}
+              onChange={e => { setArtistSearch(e.target.value); setShowArtistDropdown(true); }}
+              onFocus={() => setShowArtistDropdown(true)}
+              onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
+              placeholder="Search artists to link…"
+              className="artist-search-input"
+            />
+            {showArtistDropdown && artistSearch && filteredArtists.length > 0 && (
+              <div className="artist-dropdown">
+                {filteredArtists.slice(0, 8).map(a => (
+                  <div key={a.id} className="artist-dropdown-item" onMouseDown={() => handleAddArtist(a.id)}>
+                    {a.name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>
+            First artist = primary. Additional artists are marked as featured.
+          </p>
+        </div>
+      )}
 
       <div className="form-row">
         <div className="form-group">

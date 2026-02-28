@@ -1,5 +1,5 @@
 import type {
-  Track, Playlist, Favorite, CreateTrackInput, UpdateTrackInput, CreatePlaylistInput,
+  Track, Playlist, Favorite, Artist, Album, CreateTrackInput, UpdateTrackInput, CreatePlaylistInput,
   PaginatedResponse, SortableTrackField, SortDirection, SchedulerStatus,
   PaginatedEvents, PlaySession, SessionState, SessionMember, SessionFull,
   YouTubeSearchResponse,
@@ -200,3 +200,20 @@ export const regenerateSessionToken = (token: string) =>
 
 export const endSessionApi = (token: string) =>
   request<{ message: string }>(`/api/sessions/${token}/end`, { method: 'POST' });
+
+// ---------- Artists ----------
+
+export const getArtists = () => request<Artist[]>('/api/artists');
+
+export const getArtist = (idOrSlug: string) =>
+  request<Artist & { tracks: Track[] }>(`/api/artists/${encodeURIComponent(idOrSlug)}`);
+
+export const createArtist = (data: { name: string; imageUrl?: string; bio?: string }) =>
+  request<Artist>('/api/artists', { method: 'POST', body: JSON.stringify(data) });
+
+// ---------- Albums ----------
+
+export const getAlbums = () => request<Album[]>('/api/albums');
+
+export const getAlbumDetail = (idOrSlug: string) =>
+  request<Album & { tracks: Track[] }>(`/api/albums/${encodeURIComponent(idOrSlug)}`);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import type { Track, CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection, EnrichmentStatus } from '../types';
 import * as api from '../api';
 import TrackForm from '../components/TrackForm';
@@ -18,6 +19,7 @@ const COLUMNS: ColumnDef[] = [
   { key: 'play', label: '', width: '40px' },
   { key: 'title', label: 'Title', sortField: 'title' },
   { key: 'artist', label: 'Artist', sortField: 'artist' },
+  { key: 'album', label: 'Album', sortField: 'album' },
   { key: 'duration', label: 'Duration', sortField: 'duration', width: '80px' },
   { key: 'status', label: 'Status', width: '110px' },
   { key: 'verified', label: '✓', sortField: 'verified', width: '50px' },
@@ -265,7 +267,24 @@ export default function TracksPage() {
             <dl>
               {track.ytChannel && <><dt>Channel</dt><dd>{track.ytChannel}</dd></>}
               {track.ytUploadDate && <><dt>Upload Date</dt><dd>{track.ytUploadDate}</dd></>}
-              {track.album && <><dt>Album</dt><dd>{track.album}</dd></>}
+              {(track.albumName || track.album) && (
+                <><dt>Album</dt><dd>
+                  {track.albumName ? (
+                    <Link to={`/albums/${track.albumSlug || track.albumId}`} className="entity-link">{track.albumName}</Link>
+                  ) : track.album}
+                </dd></>
+              )}
+              {track.artists && track.artists.length > 0 && (
+                <><dt>Artists</dt><dd>
+                  {track.artists.map((a, i) => (
+                    <span key={a.id}>
+                      {i > 0 && ', '}
+                      <Link to={`/artists/${a.slug}`} className="entity-link">{a.name}</Link>
+                      {a.role !== 'primary' && <span className="artist-role"> ({a.role})</span>}
+                    </span>
+                  ))}
+                </dd></>
+              )}
               {track.releaseYear && <><dt>Release Year</dt><dd>{track.releaseYear}</dd></>}
               {track.genre && <><dt>Genre</dt><dd>{track.genre}</dd></>}
               {track.label && <><dt>Label</dt><dd>{track.label}</dd></>}
@@ -454,11 +473,36 @@ export default function TracksPage() {
                         {t.title}
                         <EnrichmentBadge status={t.enrichmentStatus} confidence={t.metadataConfidence} />
                       </div>
-                      {t.album && <div className="track-album">{t.album}</div>}
                     </div>
 
-                    {/* Artist */}
-                    <div className="track-artist">{t.artist}</div>
+                    {/* Artist (clickable links) */}
+                    <div className="track-artist">
+                      {t.artists && t.artists.length > 0 ? (
+                        t.artists.map((a, i) => (
+                          <span key={a.id}>
+                            {i > 0 && ', '}
+                            <Link to={`/artists/${a.slug}`} className="entity-link" onClick={e => e.stopPropagation()}>
+                              {a.name}
+                            </Link>
+                          </span>
+                        ))
+                      ) : t.artistId ? (
+                        <Link to={`/artists/${t.artistId}`} className="entity-link">{t.artist}</Link>
+                      ) : (
+                        t.artist
+                      )}
+                    </div>
+
+                    {/* Album (clickable link) */}
+                    <div className="track-meta">
+                      {t.albumName ? (
+                        <Link to={`/albums/${t.albumSlug || t.albumId}`} className="entity-link" onClick={e => e.stopPropagation()}>
+                          {t.albumName}
+                        </Link>
+                      ) : t.album ? (
+                        <span className="track-album-text">{t.album}</span>
+                      ) : '—'}
+                    </div>
 
                     {/* Duration */}
                     <div className="track-meta">{formatDuration(t.duration)}</div>
