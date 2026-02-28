@@ -42,7 +42,7 @@ const SORTABLE_FIELDS: SortableTrackField[] = [
   'duration', 'verified', 'album', 'genre', 'releaseYear',
 ];
 
-const DEFAULT_PLAYLIST_IMPORT_LIMIT = 100;
+const DEFAULT_PLAYLIST_IMPORT_LIMIT = 500;
 const MAX_PLAYLIST_IMPORT_LIMIT = 500;
 
 function playlistImportLimit(): number {
