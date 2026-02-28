@@ -18,6 +18,7 @@ import UsersPage from './pages/UsersPage';
 import { AudioPlayerProvider, PlayerBar } from './components/AudioPlayer';
 import PasswordGate from './components/PasswordGate';
 import UserSelector from './components/UserSelector';
+import ImpersonationBanner from './components/ImpersonationBanner';
 import { useAuth } from './context/AuthContext';
 
 /** Sidebar "Now Playing" link — only rendered when a track/radio is active. */
@@ -68,6 +69,7 @@ function AppShell() {
 
   return (
     <AudioPlayerProvider>
+      <ImpersonationBanner />
       <div className="app-layout">
         {/* Mobile header with hamburger */}
         <header className="mobile-header">

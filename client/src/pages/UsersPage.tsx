@@ -6,6 +6,10 @@
  *     cannot be deleted or have their username changed.
  *   - The delete button and username field are disabled for protected users.
  *
+ * Impersonation (admin-only):
+ *   - Admins see an "Impersonate" button next to non-admin, non-self users.
+ *   - Clicking it switches the effective user for all API calls.
+ *
  * All operations call the /api/users REST endpoints.
  */
 
@@ -29,14 +33,15 @@ interface EditState {
 }
 
 export default function UsersPage() {
-  const { currentUser, impersonateUser, isImpersonating, impersonatedUserId, originalUserId } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { currentUser, impersonateUser, isImpersonating, originalUserId } = useAuth();
 
   // The "real" current user is the original admin when impersonating, otherwise currentUser
   const realUserId = isImpersonating ? originalUserId : currentUser?.id;
   const isAdmin = currentUser?.role === 'admin';
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   // Create form state
   const [newUsername, setNewUsername] = useState('');
@@ -175,6 +180,18 @@ export default function UsersPage() {
     }
   }
 
+  function handleImpersonate(user: User) {
+    impersonateUser(user.id);
+  }
+
+  /** Can this user be impersonated? Admin-only, not self, not other admins */
+  function canImpersonate(user: User): boolean {
+    if (!isAdmin) return false;
+    if (user.id === realUserId) return false; // can't impersonate yourself
+    if (user.role === 'admin') return false; // don't impersonate other admins
+    return true;
+  }
+
   return (
     <div className="page-container">
       <h2>👥 Users</h2>
@@ -297,15 +314,10 @@ export default function UsersPage() {
                     </div>
                   </div>
                   <div className="user-actions">
-                    {isAdmin && (
+                    {canImpersonate(user) && (
                       <button
-                        onClick={() => impersonateUser(user.id)}
-                        disabled={user.id === realUserId}
-                        title={
-                          user.id === realUserId
-                            ? 'Cannot impersonate yourself'
-                            : `Impersonate ${user.displayName ?? user.username}`
-                        }
+                        onClick={() => handleImpersonate(user)}
+                        title={`Impersonate ${user.displayName ?? user.username}`}
                         className="btn-impersonate"
                       >
                         🎭 Impersonate

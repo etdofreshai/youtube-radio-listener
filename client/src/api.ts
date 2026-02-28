@@ -17,6 +17,13 @@ import {
   isProtectedUsername,
   getActiveUserId,
   setActiveUserId,
+  getEffectiveUserId,
+  getImpersonatedUserId,
+  getOriginalUserId,
+  setImpersonation,
+  clearImpersonation,
+  IMPERSONATION_USER_KEY,
+  IMPERSONATION_ORIGINAL_KEY,
 } from './utils/userAccess';
 export {
   LOCAL_STORAGE_USER_KEY,
@@ -24,10 +31,17 @@ export {
   isProtectedUsername,
   getActiveUserId,
   setActiveUserId,
+  getEffectiveUserId,
+  getImpersonatedUserId,
+  getOriginalUserId,
+  setImpersonation,
+  clearImpersonation,
+  IMPERSONATION_USER_KEY,
+  IMPERSONATION_ORIGINAL_KEY,
 };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const userId = getActiveUserId();
+  const userId = getEffectiveUserId();
   const extraHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
   };

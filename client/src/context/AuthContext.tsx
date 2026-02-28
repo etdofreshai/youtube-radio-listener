@@ -1,5 +1,5 @@
 /**
- * AuthContext — manages password gate state and active user identity.
+ * AuthContext — manages password gate state, active user identity, and impersonation.
  *
  * Password gate:
  *   - On load, checks /api/auth/status. If requiresPassword=false (no APP_PASSWORD set),
@@ -12,6 +12,11 @@
  *   - After password is accepted, user must select their identity from the user list.
  *   - Selection is persisted in localStorage (key: nightwave_user_id).
  *   - The X-User-Id header is attached to all API requests (see api.ts).
+ *
+ * Impersonation (admin-only):
+ *   - Admin users can impersonate other users to see the app from their perspective.
+ *   - State persisted in sessionStorage (survives refresh, clears on tab close).
+ *   - All API calls use the impersonated user's ID via getEffectiveUserId().
  *
  * Dev bypass:
  *   - Set APP_PASSWORD="" or omit it on the server side to skip the gate entirely.
@@ -26,7 +31,14 @@ import React, {
   useState,
 } from 'react';
 import type { User } from '../api';
-import { getActiveUserId, setActiveUserId } from '../api';
+import {
+  getActiveUserId,
+  setActiveUserId,
+  getImpersonatedUserId,
+  getOriginalUserId,
+  setImpersonation,
+  clearImpersonation,
+} from '../api';
 
 const SESSION_KEY = 'nightwave_auth_verified';
 
@@ -45,6 +57,18 @@ export interface AuthState {
   setCurrentUser: (user: User | null) => void;
   /** Clear user and password state (logout) */
   logout: () => void;
+  /** True when an admin is impersonating another user */
+  isImpersonating: boolean;
+  /** The ID of the user being impersonated (null when not impersonating) */
+  impersonatedUserId: string | null;
+  /** The full user object being impersonated (null when not impersonating) */
+  impersonatedUser: User | null;
+  /** The original admin user ID who started impersonation */
+  originalUserId: string | null;
+  /** Start impersonating a user by ID (admin-only) */
+  impersonateUser: (userId: string) => void;
+  /** Stop impersonating and return to the original admin context */
+  returnToOriginalUser: () => void;
 }
 
 const AuthContext = createContext<AuthState>({
@@ -55,6 +79,12 @@ const AuthContext = createContext<AuthState>({
   setPasswordVerified: () => {},
   setCurrentUser: () => {},
   logout: () => {},
+  isImpersonating: false,
+  impersonatedUserId: null,
+  impersonatedUser: null,
+  originalUserId: null,
+  impersonateUser: () => {},
+  returnToOriginalUser: () => {},
 });
 
 export function useAuth(): AuthState {
@@ -179,6 +209,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const impersonateUser = useCallback((userId: string) => {
     if (!currentUser) return;
+    if (currentUser.role !== 'admin') return; // guard: admin-only
     // Store the original admin user ID and set the impersonated user
     const origId = originalUserId ?? currentUser.id;
     setImpersonation(origId, userId);
@@ -205,12 +236,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setPasswordVerified,
         setCurrentUser,
         logout,
+        isImpersonating,
         impersonatedUserId,
         impersonatedUser,
         originalUserId,
         impersonateUser,
         returnToOriginalUser,
-        isImpersonating,
       }}
     >
       {children}
