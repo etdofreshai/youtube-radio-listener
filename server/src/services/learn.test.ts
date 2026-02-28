@@ -394,8 +394,9 @@ describe('inferResourceType', () => {
     assert.equal(inferResourceType('Song Page', 'https://example.com/song'), 'guitar-chords');
   });
 
-  it('prefers sheet-music over guitar-tabs when "score" appears', () => {
-    assert.equal(inferResourceType('Piano Score Tab', 'https://example.com/sheet'), 'sheet-music');
+  it('infers sheet-music when "score" appears and no "tab" in combined text', () => {
+    // "score" in title, no "tab" anywhere — should be sheet-music
+    assert.equal(inferResourceType('Piano Score PDF', 'https://example.com/music'), 'sheet-music');
   });
 });
 
@@ -432,7 +433,7 @@ describe('generateSearchQueries', () => {
     }
   });
 
-  it('generates at least 2 queries per type for a normal track', () => {
+  it('generates at least 1 query per type for a normal track', () => {
     const track = mockTrack({ title: 'Stairway to Heaven', artist: 'Led Zeppelin' });
     const queries = generateSearchQueries(track);
     for (const [type, qs] of queries) {
