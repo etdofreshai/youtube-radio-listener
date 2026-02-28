@@ -22,6 +22,12 @@ FROM base AS production
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Install yt-dlp + ffmpeg (required for audio download & enrichment)
+RUN apk add --no-cache ffmpeg python3 py3-pip \
+    && python3 -m pip install --break-system-packages --no-cache-dir yt-dlp \
+    && yt-dlp --version \
+    && ffmpeg -version | head -1
+
 # Server dependencies (production only)
 COPY server/package.json server/package-lock.json* ./server/
 RUN cd server && npm install --omit=dev
@@ -31,5 +37,8 @@ COPY --from=server-build /app/server/dist ./server/dist
 
 # Client build output
 COPY --from=client-build /app/client/dist ./client/dist
+
+# Audio files directory (can be mounted as a volume)
+RUN mkdir -p /app/audio
 
 CMD ["node", "server/dist/index.js"]

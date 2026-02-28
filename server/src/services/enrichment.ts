@@ -23,9 +23,9 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as store from '../store/memory';
 import type { Track, EnrichmentStatus, FieldConfidence } from '../types';
+import { ytDlpAvailable, ytDlpBin } from '../deps';
 
 const execFileAsync = promisify(execFile);
-const YT_DLP = process.env.YT_DLP_PATH || 'yt-dlp';
 
 // ============================================================
 // Provider Interface
@@ -81,14 +81,14 @@ class YouTubeProvider implements EnrichmentProvider {
   confidence: 'high' = 'high';
   priority = 10;
 
-  isAvailable(): boolean { return true; }
+  isAvailable(): boolean { return ytDlpAvailable(); }
 
   async enrich(track: Track): Promise<EnrichmentResult> {
     const result: EnrichmentResult = {};
     const annotations: EnrichmentResult['fieldAnnotations'] = [];
 
     try {
-      const { stdout } = await execFileAsync(YT_DLP, [
+      const { stdout } = await execFileAsync(ytDlpBin(), [
         '--dump-json',
         '--no-playlist',
         '--no-download',

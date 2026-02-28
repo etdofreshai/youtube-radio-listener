@@ -14,7 +14,28 @@ Dark, Spotify-inspired web app for managing YouTube music tracks, playlists, and
 ### Prerequisites
 - Node.js 22+
 - npm 10+
+- **yt-dlp** (required for audio download + enrichment)
+- **ffmpeg** (required for audio conversion)
 - PostgreSQL (optional — uses in-memory store without it)
+
+#### Installing yt-dlp + ffmpeg
+
+```bash
+# macOS
+brew install yt-dlp ffmpeg
+
+# Ubuntu/Debian
+sudo apt update && sudo apt install -y ffmpeg python3-pip
+pip install yt-dlp
+
+# Alpine (Docker)
+apk add ffmpeg python3 py3-pip
+python3 -m pip install --break-system-packages yt-dlp
+
+# Or set custom paths via env vars:
+export YT_DLP_PATH=/usr/local/bin/yt-dlp
+export FFMPEG_PATH=/usr/bin/ffmpeg
+```
 
 ### Setup
 
@@ -55,6 +76,9 @@ npm start
 | `VITE_API_URL` | _(empty)_ | API base URL for frontend (blank = same origin) |
 | `YOUTUBE_API_KEY` | _(empty)_ | YouTube Data API key (future) |
 | `AUTH_SECRET` | _(empty)_ | JWT/session secret (future) |
+| `YT_DLP_PATH` | `yt-dlp` | Path to yt-dlp binary |
+| `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg binary |
+| `FFPROBE_PATH` | `ffprobe` | Path to ffprobe binary |
 
 ## Project Structure
 

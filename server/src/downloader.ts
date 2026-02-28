@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import * as store from './store/memory';
+import { ytDlpAvailable, ytDlpBin, ffprobeBin } from './deps';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,8 +15,6 @@ if (!fs.existsSync(AUDIO_DIR)) {
   fs.mkdirSync(AUDIO_DIR, { recursive: true });
 }
 
-const YT_DLP = process.env.YT_DLP_PATH || 'yt-dlp';
-
 // Active downloads to prevent duplicates
 const activeDownloads = new Set<string>();
 
@@ -26,6 +25,14 @@ const activeDownloads = new Set<string>();
 export async function downloadTrackAudio(trackId: string): Promise<void> {
   const track = store.getTrack(trackId);
   if (!track) throw new Error('Track not found');
+
+  if (!ytDlpAvailable()) {
+    const msg = 'yt-dlp binary not found. Install yt-dlp (pip install yt-dlp) or set YT_DLP_PATH env var.';
+    console.error(`[downloader] ❌ ${msg}`);
+    store.updateTrackAudio(trackId, { audioStatus: 'error', audioError: msg });
+    return;
+  }
+
   if (activeDownloads.has(trackId)) {
     console.log(`[downloader] Already downloading ${trackId}, skipping`);
     return;
@@ -58,7 +65,7 @@ export async function downloadTrackAudio(trackId: string): Promise<void> {
     ];
 
     console.log(`[downloader] Starting download for ${trackId}: ${track.youtubeUrl}`);
-    const { stdout, stderr } = await execFileAsync(YT_DLP, args, {
+    const { stdout, stderr } = await execFileAsync(ytDlpBin(), args, {
       timeout: 300_000, // 5 min timeout
       maxBuffer: 10 * 1024 * 1024,
     });
@@ -101,7 +108,7 @@ export async function downloadTrackAudio(trackId: string): Promise<void> {
     // If yt-dlp didn't give us duration, try ffprobe
     if (duration === null) {
       try {
-        const { stdout: probeOut } = await execFileAsync('ffprobe', [
+        const { stdout: probeOut } = await execFileAsync(ffprobeBin(), [
           '-v', 'error',
           '-show_entries', 'format=duration',
           '-of', 'csv=p=0',
@@ -124,7 +131,10 @@ export async function downloadTrackAudio(trackId: string): Promise<void> {
       audioError: null,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    let message = err instanceof Error ? err.message : String(err);
+    if (message.includes('ENOENT')) {
+      message = `yt-dlp binary not found at "${ytDlpBin()}". Install it or set YT_DLP_PATH.`;
+    }
     console.error(`[downloader] ❌ Failed ${trackId}:`, message);
     store.updateTrackAudio(trackId, {
       audioStatus: 'error',
