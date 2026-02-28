@@ -215,7 +215,9 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
   const pool = getPool();
   const id = uuidv4();
   const now = new Date().toISOString();
-  const slug = await generateUniqueSlug(pool, 'tracks', trackSlug(input.artist, input.title));
+  const title = input.title || 'Untitled';
+  const artist = input.artist || 'Unknown Artist';
+  const slug = await generateUniqueSlug(pool, 'tracks', trackSlug(artist, title));
 
   const { rows } = await pool.query(`
     INSERT INTO tracks (id, slug, youtube_url, title, artist, start_time_sec, end_time_sec, volume, notes, created_at, updated_at, audio_status, enrichment_status, enrichment_attempts, field_confidences)
@@ -225,8 +227,8 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
     id,
     slug,
     input.youtubeUrl,
-    input.title,
-    input.artist,
+    title,
+    artist,
     input.startTimeSec ?? null,
     input.endTimeSec ?? null,
     input.volume ?? 100,

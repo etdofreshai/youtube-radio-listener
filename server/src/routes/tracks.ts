@@ -3,6 +3,7 @@ import * as store from '../store';
 import { downloadTrackAudio, refreshTrackAudio } from '../downloader';
 import { enrichTrack, enrichTrackSync, enrichAllTracks, listProviders, budgetTracker } from '../services/enrichment';
 import { getSchedulerStatus, forceTick, startScheduler, stopScheduler } from '../services/scheduler';
+import { fetchYouTubeMetadata, parseArtistTitle, isValidYouTubeUrl } from '../services/youtube-metadata';
 import type { CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection } from '../types';
 
 const router = Router();
@@ -105,15 +106,52 @@ router.get('/:id', async (req, res) => {
 // POST /api/tracks
 router.post('/', async (req, res) => {
   const { youtubeUrl, title, artist, startTimeSec, endTimeSec, volume, notes } = req.body as CreateTrackInput;
-  if (!youtubeUrl || !title || !artist) {
-    res.status(400).json({ error: 'youtubeUrl, title, and artist are required' });
+  if (!youtubeUrl) {
+    res.status(400).json({ error: 'youtubeUrl is required' });
     return;
   }
   if (volume != null && (volume < 0 || volume > 200)) {
     res.status(400).json({ error: 'volume must be between 0 and 200' });
     return;
   }
-  const track = await store.createTrack({ youtubeUrl, title, artist, startTimeSec, endTimeSec, volume, notes });
+
+  // Determine title and artist — prefer user-provided, fall back to YouTube metadata
+  let resolvedTitle = title?.trim() || '';
+  let resolvedArtist = artist?.trim() || '';
+
+  if (!resolvedTitle || !resolvedArtist) {
+    // Need to fetch metadata from YouTube
+    if (!isValidYouTubeUrl(youtubeUrl)) {
+      res.status(400).json({ error: 'Invalid YouTube URL. Provide a valid URL or supply title and artist manually.' });
+      return;
+    }
+
+    try {
+      const ytInfo = await fetchYouTubeMetadata(youtubeUrl);
+      const parsed = parseArtistTitle(ytInfo.videoTitle, ytInfo.channel);
+
+      if (!resolvedTitle) resolvedTitle = parsed.title;
+      if (!resolvedArtist) resolvedArtist = parsed.artist;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[tracks] YouTube metadata fetch failed:`, msg);
+      res.status(422).json({
+        error: `Could not extract metadata from YouTube URL. Provide title and artist manually.`,
+        detail: msg,
+      });
+      return;
+    }
+  }
+
+  const track = await store.createTrack({
+    youtubeUrl,
+    title: resolvedTitle,
+    artist: resolvedArtist,
+    startTimeSec,
+    endTimeSec,
+    volume,
+    notes,
+  });
 
   // Record event
   const userId = getActorId(req);

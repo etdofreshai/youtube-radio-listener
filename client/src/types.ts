@@ -186,8 +186,8 @@ export interface Favorite {
 
 export interface CreateTrackInput {
   youtubeUrl: string;
-  title: string;
-  artist: string;
+  title?: string;
+  artist?: string;
   startTimeSec?: number | null;
   endTimeSec?: number | null;
   volume?: number;

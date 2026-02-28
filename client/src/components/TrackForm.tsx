@@ -18,24 +18,39 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  const isEditing = !!initial;
+  const hasUrl = youtubeUrl.trim().length > 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!youtubeUrl.trim() || !title.trim() || !artist.trim()) {
-      setError('YouTube URL, title, and artist are required.');
+
+    if (!hasUrl) {
+      setError('YouTube URL is required.');
       return;
     }
+
+    // When editing, title and artist are still required (track already exists)
+    if (isEditing && (!title.trim() || !artist.trim())) {
+      setError('Title and artist are required when editing.');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
     try {
-      await onSubmit({
+      const data: CreateTrackInput = {
         youtubeUrl: youtubeUrl.trim(),
-        title: title.trim(),
-        artist: artist.trim(),
         startTimeSec: startTimeSec ? parseInt(startTimeSec, 10) : null,
         endTimeSec: endTimeSec ? parseInt(endTimeSec, 10) : null,
         volume: volume ? Math.min(200, Math.max(0, parseInt(volume, 10))) : 100,
         notes: notes.trim(),
-      });
+      };
+
+      // Only include title/artist if user provided them (let server auto-detect if empty)
+      if (title.trim()) data.title = title.trim();
+      if (artist.trim()) data.artist = artist.trim();
+
+      await onSubmit(data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -49,17 +64,27 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
 
       <div className="form-group">
         <label>YouTube URL *</label>
-        <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." />
+        <input
+          value={youtubeUrl}
+          onChange={e => setYoutubeUrl(e.target.value)}
+          placeholder="https://youtube.com/watch?v=..."
+          autoFocus={!isEditing}
+        />
+        {!isEditing && hasUrl && !title.trim() && !artist.trim() && (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>
+            💡 Title &amp; artist will be auto-detected from the video. You can override below.
+          </p>
+        )}
       </div>
 
       <div className="form-row">
         <div className="form-group">
-          <label>Title *</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Song title" />
+          <label>Title{isEditing ? ' *' : ' (optional — auto-detected)'}</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder={isEditing ? 'Song title' : 'Leave blank to auto-detect'} />
         </div>
         <div className="form-group">
-          <label>Artist *</label>
-          <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Artist name" />
+          <label>Artist{isEditing ? ' *' : ' (optional — auto-detected)'}</label>
+          <input value={artist} onChange={e => setArtist(e.target.value)} placeholder={isEditing ? 'Artist name' : 'Leave blank to auto-detect'} />
         </div>
       </div>
 
@@ -92,7 +117,7 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
       <div className="modal-actions">
         <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
         <button type="submit" className="btn btn-primary" disabled={submitting}>
-          {submitting ? 'Saving...' : (initial ? 'Update' : 'Add Track')}
+          {submitting ? (isEditing ? 'Saving...' : 'Adding…') : (isEditing ? 'Update' : 'Add Track')}
         </button>
       </div>
     </form>
