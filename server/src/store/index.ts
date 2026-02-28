@@ -68,6 +68,10 @@ export function updateTrackVideo(...args: Parameters<typeof memStore.updateTrack
   return usePostgres ? pgStore.updateTrackVideo(...args) : wrap(memStore.updateTrackVideo(...args));
 }
 
+export function updateTrackLyrics(...args: Parameters<typeof memStore.updateTrackLyrics>) {
+  return usePostgres ? pgStore.updateTrackLyrics(...args) : wrap(memStore.updateTrackLyrics(...args));
+}
+
 export function updateTrackMetadata(...args: Parameters<typeof memStore.updateTrackMetadata>) {
   return usePostgres ? pgStore.updateTrackMetadata(...args) : wrap(memStore.updateTrackMetadata(...args));
 }
@@ -263,6 +267,47 @@ export function getUserSessions(userId: string) {
   if (!usePostgres) return Promise.resolve([]);
   return pgStore.getUserSessions(userId);
 }
+
+// ============================================================
+// Track Variants (postgres-only)
+// ============================================================
+
+export function getVariants(trackId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getVariants(trackId);
+}
+
+export function createVariant(...args: Parameters<typeof pgStore.createVariant>) {
+  if (!usePostgres) throw new Error('Variants require PostgreSQL');
+  return pgStore.createVariant(...args);
+}
+
+export function updateVariant(...args: Parameters<typeof pgStore.updateVariant>) {
+  if (!usePostgres) throw new Error('Variants require PostgreSQL');
+  return pgStore.updateVariant(...args);
+}
+
+export function deleteVariant(...args: Parameters<typeof pgStore.deleteVariant>) {
+  if (!usePostgres) throw new Error('Variants require PostgreSQL');
+  return pgStore.deleteVariant(...args);
+}
+
+export function setPreferredVariant(...args: Parameters<typeof pgStore.setPreferredVariant>) {
+  if (!usePostgres) throw new Error('Variants require PostgreSQL');
+  return pgStore.setPreferredVariant(...args);
+}
+
+export function findVariantByVideoId(videoId: string) {
+  if (!usePostgres) return Promise.resolve(undefined);
+  return pgStore.findVariantByVideoId(videoId);
+}
+
+export function findTracksByCanonicalIdentity(title: string, artist: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.findTracksByCanonicalIdentity(title, artist);
+}
+
+export { extractVideoId } from './postgres';
 
 // ============================================================
 // Meta

@@ -25,7 +25,8 @@ function defaultMetadata(): Pick<Track,
   'enrichmentStatus' | 'enrichmentAttempts' | 'enrichmentError' |
   'nextEnrichAt' | 'stageACompletedAt' | 'stageBCompletedAt' |
   'verified' | 'verifiedBy' | 'verifiedAt' |
-  'videoStatus' | 'videoError' | 'videoFilename'
+  'videoStatus' | 'videoError' | 'videoFilename' |
+  'lyrics' | 'lyricsSource'
 > {
   return {
     ytChannel: null,
@@ -60,6 +61,8 @@ function defaultMetadata(): Pick<Track,
     videoStatus: 'none',
     videoError: null,
     videoFilename: null,
+    lyrics: null,
+    lyricsSource: null,
   };
 }
 
@@ -228,6 +231,7 @@ export function getTrack(id: string): Track | undefined {
 
 export function createTrack(input: CreateTrackInput): Track {
   const now = new Date().toISOString();
+  const isLive = input.isLiveStream ?? false;
   const track: Track = {
     id: uuidv4(),
     slug: null,
@@ -242,8 +246,10 @@ export function createTrack(input: CreateTrackInput): Track {
     notes: input.notes ?? '',
     createdAt: now,
     updatedAt: now,
-    // Audio fields
-    audioStatus: 'pending',
+    // Live stream flag
+    isLiveStream: isLive,
+    // Audio fields — live streams are immediately "ready" (streamed, not downloaded)
+    audioStatus: isLive ? 'ready' : 'pending',
     audioError: null,
     audioFilename: null,
     duration: null,
@@ -267,6 +273,7 @@ export function updateTrack(id: string, input: UpdateTrackInput): Track | null {
   if (input.endTimeSec !== undefined) updates.endTimeSec = input.endTimeSec;
   if (input.volume !== undefined) updates.volume = input.volume;
   if (input.notes !== undefined) updates.notes = input.notes;
+  if (input.isLiveStream !== undefined) updates.isLiveStream = input.isLiveStream;
   if (input.album !== undefined) updates.album = input.album;
   if (input.releaseYear !== undefined) updates.releaseYear = input.releaseYear;
   if (input.genre !== undefined) updates.genre = input.genre;
@@ -321,6 +328,23 @@ export function updateTrackVideo(
     videoStatus: fields.videoStatus,
     videoError: fields.videoError ?? existing.videoError,
     videoFilename: fields.videoFilename ?? existing.videoFilename,
+    updatedAt: new Date().toISOString(),
+  };
+  tracks.set(id, updated);
+  return updated;
+}
+
+export function updateTrackLyrics(
+  id: string,
+  lyrics: string | null,
+  lyricsSource: string | null,
+): Track | null {
+  const existing = tracks.get(id);
+  if (!existing) return null;
+  const updated: Track = {
+    ...existing,
+    lyrics,
+    lyricsSource,
     updatedAt: new Date().toISOString(),
   };
   tracks.set(id, updated);

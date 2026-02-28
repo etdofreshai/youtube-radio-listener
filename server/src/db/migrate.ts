@@ -106,6 +106,13 @@ ALTER TABLE tracks ADD COLUMN IF NOT EXISTS video_status TEXT NOT NULL DEFAULT '
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS video_error TEXT;
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS video_filename TEXT;
 
+-- Lyrics
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS lyrics TEXT;
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS lyrics_source TEXT;
+
+-- Live stream support (v7)
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS is_live_stream BOOLEAN NOT NULL DEFAULT false;
+
 -- ============================================================
 -- 3. Playlists + playlist_tracks
 -- ============================================================
@@ -341,6 +348,67 @@ CREATE TABLE IF NOT EXISTS track_artists (
 CREATE INDEX IF NOT EXISTS idx_track_artists_track ON track_artists(track_id);
 CREATE INDEX IF NOT EXISTS idx_track_artists_artist ON track_artists(artist_id);
 CREATE INDEX IF NOT EXISTS idx_track_artists_position ON track_artists(track_id, position);
+
+-- ============================================================
+-- v7: Track variants — multiple YouTube URLs per canonical track
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS track_variants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  track_id UUID NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  youtube_url TEXT NOT NULL,
+  video_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'original',
+  label TEXT NOT NULL DEFAULT '',
+  is_preferred BOOLEAN NOT NULL DEFAULT false,
+  position INTEGER NOT NULL DEFAULT 0,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_track_variants_track ON track_variants(track_id);
+CREATE INDEX IF NOT EXISTS idx_track_variants_video_id ON track_variants(video_id);
+CREATE INDEX IF NOT EXISTS idx_track_variants_preferred ON track_variants(track_id, is_preferred) WHERE is_preferred = true;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_track_variants_unique_video ON track_variants(track_id, video_id);
+
+DROP TRIGGER IF EXISTS update_track_variants_updated_at ON track_variants;
+CREATE TRIGGER update_track_variants_updated_at
+  BEFORE UPDATE ON track_variants
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+`;
+
+/**
+ * Backfill: create a default 'original' variant for any track that doesn't
+ * have one yet. Idempotent — safe to run on every startup.
+ */
+const BACKFILL_VARIANTS = `
+INSERT INTO track_variants (track_id, youtube_url, video_id, kind, label, is_preferred, position)
+SELECT
+  t.id,
+  t.youtube_url,
+  COALESCE(
+    -- Extract video ID from various YouTube URL formats
+    CASE
+      WHEN t.youtube_url LIKE '%youtu.be/%'
+        THEN split_part(split_part(t.youtube_url, 'youtu.be/', 2), '?', 1)
+      WHEN t.youtube_url LIKE '%v=%'
+        THEN split_part(split_part(t.youtube_url, 'v=', 2), '&', 1)
+      WHEN t.youtube_url LIKE '%/embed/%'
+        THEN split_part(split_part(t.youtube_url, '/embed/', 2), '?', 1)
+      ELSE 'unknown-' || t.id::text
+    END,
+    'unknown-' || t.id::text
+  ),
+  'original',
+  'Original',
+  true,
+  0
+FROM tracks t
+WHERE NOT EXISTS (
+  SELECT 1 FROM track_variants tv WHERE tv.track_id = t.id
+);
 `;
 
 /**
@@ -351,6 +419,8 @@ export async function ensureSchema(): Promise<boolean> {
   const pool = getPool();
   try {
     await pool.query(SCHEMA_DDL);
+    // Backfill variants for existing tracks
+    await pool.query(BACKFILL_VARIANTS);
     return true;
   } catch (err) {
     console.error('[migrate] Schema migration failed:', err);

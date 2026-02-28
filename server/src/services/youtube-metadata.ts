@@ -24,6 +24,7 @@ export interface YouTubeVideoInfo {
   album: string | null;
   genre: string | null;
   releaseYear: number | null;
+  isLive: boolean;
 }
 
 export interface ParsedTrackInfo {
@@ -227,5 +228,6 @@ export async function fetchYouTubeMetadata(youtubeUrl: string): Promise<YouTubeV
     album: info.album || null,
     genre: info.genre || null,
     releaseYear: info.release_year || null,
+    isLive: !!(info.is_live || info.was_live),
   };
 }

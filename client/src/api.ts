@@ -2,7 +2,7 @@ import type {
   Track, Playlist, Favorite, Artist, Album, CreateTrackInput, UpdateTrackInput, CreatePlaylistInput,
   PaginatedResponse, SortableTrackField, SortDirection, SchedulerStatus,
   PaginatedEvents, PlaySession, SessionState, SessionMember, SessionFull,
-  YouTubeSearchResponse,
+  YouTubeSearchResponse, TrackVariant, CreateVariantInput, UpdateVariantInput,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL || '';
@@ -93,6 +93,16 @@ export function getAudioUrl(trackId: string): string {
   return `${BASE}/api/audio/${trackId}`;
 }
 
+// Live stream URL helper — resolves + proxies live YouTube stream audio
+export function getStreamUrl(trackId: string): string {
+  return `${BASE}/api/stream/${trackId}`;
+}
+
+// Get the appropriate playback URL for a track (stream for live, audio for downloaded)
+export function getPlaybackUrl(track: { id: string; isLiveStream: boolean }): string {
+  return track.isLiveStream ? getStreamUrl(track.id) : getAudioUrl(track.id);
+}
+
 // Video URL helper
 export function getVideoUrl(trackId: string): string {
   return `${BASE}/api/video/${trackId}`;
@@ -102,10 +112,49 @@ export function getVideoUrl(trackId: string): string {
 export const downloadVideo = (id: string) =>
   request<Track>(`/api/tracks/${id}/download-video`, { method: 'POST' });
 
+// Lyrics
+export interface LyricsResponse {
+  lyrics: string | null;
+  lyricsSource: string | null;
+  cached?: boolean;
+}
+
+export const getLyrics = (id: string) =>
+  request<LyricsResponse>(`/api/tracks/${id}/lyrics`);
+
+export const fetchLyrics = (id: string) =>
+  request<LyricsResponse>(`/api/tracks/${id}/fetch-lyrics`, { method: 'POST' });
+
 // Preview URL helper — streams audio directly from YouTube via server proxy
 export function getPreviewUrl(videoId: string): string {
   return `${BASE}/api/preview/${videoId}`;
 }
+
+// ---------- Track Variants ----------
+
+export const getVariants = (trackId: string) =>
+  request<TrackVariant[]>(`/api/tracks/${trackId}/variants`);
+
+export const addVariant = (trackId: string, data: CreateVariantInput) =>
+  request<TrackVariant>(`/api/tracks/${trackId}/variants`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateVariant = (trackId: string, variantId: string, data: UpdateVariantInput) =>
+  request<TrackVariant>(`/api/tracks/${trackId}/variants/${variantId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+
+export const deleteVariant = (trackId: string, variantId: string) =>
+  request<void>(`/api/tracks/${trackId}/variants/${variantId}`, { method: 'DELETE' });
+
+export const setPreferredVariant = (trackId: string, variantId: string) =>
+  request<Track>(`/api/tracks/${trackId}/variants/${variantId}/prefer`, { method: 'POST' });
+
+export const createTrackForceNew = (data: CreateTrackInput) =>
+  request<Track>('/api/tracks?forceCreate=true', { method: 'POST', body: JSON.stringify(data) });
 
 // ---------- Playlists ----------
 

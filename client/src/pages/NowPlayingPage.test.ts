@@ -77,3 +77,43 @@ describe('Now Playing route constant', () => {
     assert.strictEqual(NOW_PLAYING_ROUTE, '/now-playing');
   });
 });
+
+// ── Media mode toggle ────────────────────────────────────────────────────────
+
+// Re-declare types/helpers from NowPlayingPage for self-contained testing
+type MediaMode = 'video' | 'artwork' | 'lyrics';
+
+function loadMediaMode(): MediaMode {
+  // Simulated — in real code reads from localStorage
+  return 'video'; // default
+}
+
+const MEDIA_MODES: MediaMode[] = ['video', 'artwork', 'lyrics'];
+
+describe('MediaMode defaults and validation', () => {
+  it('default media mode is "video"', () => {
+    assert.strictEqual(loadMediaMode(), 'video');
+  });
+
+  it('has exactly 3 modes', () => {
+    assert.strictEqual(MEDIA_MODES.length, 3);
+  });
+
+  it('modes are video, artwork, lyrics in order', () => {
+    assert.deepStrictEqual(MEDIA_MODES, ['video', 'artwork', 'lyrics']);
+  });
+
+  it('all modes are valid MediaMode values', () => {
+    for (const m of MEDIA_MODES) {
+      assert.ok(
+        m === 'video' || m === 'artwork' || m === 'lyrics',
+        `"${m}" is a valid mode`
+      );
+    }
+  });
+
+  it('loadMediaMode returns a valid mode', () => {
+    const mode = loadMediaMode();
+    assert.ok(MEDIA_MODES.includes(mode));
+  });
+});

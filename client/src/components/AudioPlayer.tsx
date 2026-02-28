@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import type { Track } from '../types';
-import { getAudioUrl } from '../api';
+import { getPlaybackUrl } from '../api';
 
 interface AudioPlayerState {
   currentTrack: Track | null;
@@ -90,7 +90,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       audioCtxRef.current.resume();
     }
 
-    audio.src = getAudioUrl(track.id);
+    audio.src = getPlaybackUrl(track);
     const vol = track.volume ?? volume;
     // Use GainNode for volume — supports 0-200% (gain 0.0-2.0)
     if (gainRef.current) {
@@ -209,7 +209,10 @@ export function PlayerBar() {
     <div className="player-bar">
       <div className="player-track-info">
         <Link to="/now-playing" className="player-now-playing-link" title="Open Now Playing">
-          <div className="player-title">{currentTrack.title}</div>
+          <div className="player-title">
+            {currentTrack.isLiveStream && <span className="badge-live" title="Live Stream">LIVE</span>}
+            {currentTrack.title}
+          </div>
           <div className="player-artist">{currentTrack.artist}</div>
         </Link>
       </div>
@@ -225,18 +228,24 @@ export function PlayerBar() {
         <button className="btn-icon" onClick={stop} title="Stop">⏹</button>
       </div>
 
-      <div className="player-progress">
-        <span className="player-time">{formatTime(currentTime)}</span>
-        <input
-          type="range"
-          className="player-seek"
-          min={0}
-          max={duration || 0}
-          value={currentTime}
-          onChange={e => seek(Number(e.target.value))}
-        />
-        <span className="player-time">{formatTime(duration)}</span>
-      </div>
+      {currentTrack.isLiveStream ? (
+        <div className="player-progress player-progress-live">
+          <span className="badge-live-pulse" title="Streaming live">● LIVE</span>
+        </div>
+      ) : (
+        <div className="player-progress">
+          <span className="player-time">{formatTime(currentTime)}</span>
+          <input
+            type="range"
+            className="player-seek"
+            min={0}
+            max={duration || 0}
+            value={currentTime}
+            onChange={e => seek(Number(e.target.value))}
+          />
+          <span className="player-time">{formatTime(duration)}</span>
+        </div>
+      )}
 
       <div className="player-volume">
         <span>{volume > 100 ? '🔊⚡' : volume > 0 ? '🔊' : '🔇'}</span>

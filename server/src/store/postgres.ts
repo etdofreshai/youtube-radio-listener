@@ -8,6 +8,7 @@ import { getPool } from '../db/pool';
 import type {
   Track, Playlist, Favorite,
   Artist, Album, ArtistSummary,
+  TrackVariant, CreateVariantInput, UpdateVariantInput, VariantKind,
   PlaySession, SessionMember, SessionState, SessionEvent,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
@@ -78,10 +79,15 @@ function rowToTrack(row: any): Track {
     nextEnrichAt: row.next_enrich_at ? (row.next_enrich_at instanceof Date ? row.next_enrich_at.toISOString() : row.next_enrich_at) : null,
     stageACompletedAt: row.stage_a_completed_at ? (row.stage_a_completed_at instanceof Date ? row.stage_a_completed_at.toISOString() : row.stage_a_completed_at) : null,
     stageBCompletedAt: row.stage_b_completed_at ? (row.stage_b_completed_at instanceof Date ? row.stage_b_completed_at.toISOString() : row.stage_b_completed_at) : null,
+    // Live stream
+    isLiveStream: row.is_live_stream ?? false,
     // Video pipeline
     videoStatus: (row.video_status || 'none') as VideoStatus,
     videoError: row.video_error || null,
     videoFilename: row.video_filename || null,
+    // Lyrics
+    lyrics: row.lyrics || null,
+    lyricsSource: row.lyrics_source || null,
   };
 }
 
@@ -163,13 +169,287 @@ async function getTrackAlbumInfoBatch(albumIds: string[]): Promise<Map<string, {
   return map;
 }
 
+// ============================================================
+// Track Variants Helpers
+// ============================================================
+
+function rowToVariant(row: any): TrackVariant {
+  return {
+    id: row.id,
+    trackId: row.track_id,
+    youtubeUrl: row.youtube_url,
+    videoId: row.video_id,
+    kind: (row.kind || 'original') as VariantKind,
+    label: row.label || '',
+    isPreferred: row.is_preferred ?? false,
+    position: row.position ?? 0,
+    metadata: row.metadata || {},
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+/** Extract YouTube video ID from URL */
+export function extractVideoId(url: string): string {
+  // youtu.be/VIDEO_ID
+  const shortMatch = url.match(/youtu\.be\/([^?&]+)/);
+  if (shortMatch) return shortMatch[1];
+  // youtube.com/watch?v=VIDEO_ID
+  const watchMatch = url.match(/[?&]v=([^&]+)/);
+  if (watchMatch) return watchMatch[1];
+  // youtube.com/embed/VIDEO_ID
+  const embedMatch = url.match(/\/embed\/([^?&]+)/);
+  if (embedMatch) return embedMatch[1];
+  // fallback
+  return 'unknown';
+}
+
+/** Get all variants for a track (ordered by position) */
+async function getTrackVariants(trackId: string): Promise<TrackVariant[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM track_variants WHERE track_id = $1 ORDER BY position ASC, created_at ASC`,
+    [trackId]
+  );
+  return rows.map(rowToVariant);
+}
+
+/** Get variants for multiple tracks in a single query (batch) */
+async function getTrackVariantsBatch(trackIds: string[]): Promise<Map<string, TrackVariant[]>> {
+  if (trackIds.length === 0) return new Map();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM track_variants WHERE track_id = ANY($1) ORDER BY track_id, position ASC, created_at ASC`,
+    [trackIds]
+  );
+  const map = new Map<string, TrackVariant[]>();
+  for (const r of rows) {
+    const list = map.get(r.track_id) || [];
+    list.push(rowToVariant(r));
+    map.set(r.track_id, list);
+  }
+  return map;
+}
+
+/** Find any variant by video ID across all tracks */
+export async function findVariantByVideoId(videoId: string): Promise<TrackVariant | undefined> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM track_variants WHERE video_id = $1 LIMIT 1`,
+    [videoId]
+  );
+  return rows.length > 0 ? rowToVariant(rows[0]) : undefined;
+}
+
+/** Find tracks that match by normalized title+artist (canonical identity) */
+export async function findTracksByCanonicalIdentity(title: string, artist: string): Promise<Track[]> {
+  const pool = getPool();
+  const normalizedTitle = title.trim().toLowerCase();
+  const normalizedArtist = artist.trim().toLowerCase();
+  const { rows } = await pool.query(
+    `SELECT * FROM tracks WHERE LOWER(TRIM(title)) = $1 AND LOWER(TRIM(artist)) = $2`,
+    [normalizedTitle, normalizedArtist]
+  );
+  return rows.map(rowToTrack);
+}
+
+/** Create a variant for a track */
+export async function createVariant(trackId: string, input: CreateVariantInput): Promise<TrackVariant> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const videoId = extractVideoId(input.youtubeUrl);
+
+    // Get next position
+    const posResult = await client.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM track_variants WHERE track_id = $1`,
+      [trackId]
+    );
+    const position = posResult.rows[0].next_pos;
+
+    // If this variant should be preferred, unset all others
+    if (input.isPreferred) {
+      await client.query(
+        `UPDATE track_variants SET is_preferred = false WHERE track_id = $1`,
+        [trackId]
+      );
+    }
+
+    const { rows } = await client.query(`
+      INSERT INTO track_variants (track_id, youtube_url, video_id, kind, label, is_preferred, position, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `, [
+      trackId,
+      input.youtubeUrl,
+      videoId,
+      input.kind || 'original',
+      input.label || '',
+      input.isPreferred ?? false,
+      position,
+      JSON.stringify(input.metadata || {}),
+    ]);
+
+    // If this variant is now preferred, update the track's youtube_url
+    if (input.isPreferred) {
+      await client.query(
+        `UPDATE tracks SET youtube_url = $1 WHERE id = $2`,
+        [input.youtubeUrl, trackId]
+      );
+    }
+
+    await client.query('COMMIT');
+    return rowToVariant(rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Update a variant */
+export async function updateVariant(trackId: string, variantId: string, input: UpdateVariantInput): Promise<TrackVariant | null> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // If setting as preferred, unset all others first
+    if (input.isPreferred) {
+      await client.query(
+        `UPDATE track_variants SET is_preferred = false WHERE track_id = $1`,
+        [trackId]
+      );
+    }
+
+    const sets: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (input.kind !== undefined) { sets.push(`kind = $${idx}`); values.push(input.kind); idx++; }
+    if (input.label !== undefined) { sets.push(`label = $${idx}`); values.push(input.label); idx++; }
+    if (input.isPreferred !== undefined) { sets.push(`is_preferred = $${idx}`); values.push(input.isPreferred); idx++; }
+    if (input.metadata !== undefined) { sets.push(`metadata = $${idx}`); values.push(JSON.stringify(input.metadata)); idx++; }
+
+    if (sets.length === 0) {
+      await client.query('COMMIT');
+      const existing = await client.query('SELECT * FROM track_variants WHERE id = $1 AND track_id = $2', [variantId, trackId]);
+      return existing.rows.length > 0 ? rowToVariant(existing.rows[0]) : null;
+    }
+
+    values.push(variantId, trackId);
+    const { rows } = await client.query(
+      `UPDATE track_variants SET ${sets.join(', ')} WHERE id = $${idx} AND track_id = $${idx + 1} RETURNING *`,
+      values
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const variant = rowToVariant(rows[0]);
+
+    // If this variant is now preferred, sync the track's youtube_url
+    if (input.isPreferred) {
+      await client.query(
+        `UPDATE tracks SET youtube_url = $1 WHERE id = $2`,
+        [variant.youtubeUrl, trackId]
+      );
+    }
+
+    await client.query('COMMIT');
+    return variant;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Delete a variant (cannot delete the last/only variant) */
+export async function deleteVariant(trackId: string, variantId: string): Promise<boolean> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Check variant count
+    const countResult = await client.query(
+      `SELECT COUNT(*) as cnt FROM track_variants WHERE track_id = $1`,
+      [trackId]
+    );
+    if (parseInt(countResult.rows[0].cnt, 10) <= 1) {
+      await client.query('ROLLBACK');
+      throw new Error('Cannot delete the last variant of a track');
+    }
+
+    // Check if this is the preferred variant
+    const variantResult = await client.query(
+      `SELECT * FROM track_variants WHERE id = $1 AND track_id = $2`,
+      [variantId, trackId]
+    );
+    if (variantResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+
+    const wasPreferred = variantResult.rows[0].is_preferred;
+
+    const { rowCount } = await client.query(
+      `DELETE FROM track_variants WHERE id = $1 AND track_id = $2`,
+      [variantId, trackId]
+    );
+
+    // If we deleted the preferred variant, make the first remaining variant preferred
+    if (wasPreferred) {
+      const remaining = await client.query(
+        `SELECT * FROM track_variants WHERE track_id = $1 ORDER BY position ASC LIMIT 1`,
+        [trackId]
+      );
+      if (remaining.rows.length > 0) {
+        await client.query(
+          `UPDATE track_variants SET is_preferred = true WHERE id = $1`,
+          [remaining.rows[0].id]
+        );
+        await client.query(
+          `UPDATE tracks SET youtube_url = $1 WHERE id = $2`,
+          [remaining.rows[0].youtube_url, trackId]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return (rowCount ?? 0) > 0;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Set a variant as preferred */
+export async function setPreferredVariant(trackId: string, variantId: string): Promise<TrackVariant | null> {
+  return updateVariant(trackId, variantId, { isPreferred: true });
+}
+
+/** Get all variants for a track */
+export async function getVariants(trackId: string): Promise<TrackVariant[]> {
+  return getTrackVariants(trackId);
+}
+
 /** Populate a track with artists + album info */
 async function populateTrack(track: Track): Promise<Track> {
-  const [artists, albumInfo] = await Promise.all([
+  const [artists, albumInfo, variants] = await Promise.all([
     getTrackArtists(track.id),
     getTrackAlbumInfo(track.albumId),
+    getTrackVariants(track.id),
   ]);
-  return { ...track, artists, ...albumInfo };
+  return { ...track, artists, ...albumInfo, variants };
 }
 
 /** Populate multiple tracks with artists + album info (batch) */
@@ -178,9 +458,10 @@ async function populateTracks(tracks: Track[]): Promise<Track[]> {
   const trackIds = tracks.map(t => t.id);
   const albumIds = tracks.map(t => t.albumId).filter(Boolean) as string[];
 
-  const [artistsMap, albumsMap] = await Promise.all([
+  const [artistsMap, albumsMap, variantsMap] = await Promise.all([
     getTrackArtistsBatch(trackIds),
     getTrackAlbumInfoBatch(albumIds),
+    getTrackVariantsBatch(trackIds),
   ]);
 
   return tracks.map(t => ({
@@ -188,6 +469,7 @@ async function populateTracks(tracks: Track[]): Promise<Track[]> {
     artists: artistsMap.get(t.id) || [],
     albumName: t.albumId ? albumsMap.get(t.albumId)?.albumName || null : null,
     albumSlug: t.albumId ? albumsMap.get(t.albumId)?.albumSlug || null : null,
+    variants: variantsMap.get(t.id) || [],
   }));
 }
 
@@ -346,9 +628,10 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
     primaryArtistId = artistIds[0];
   }
 
+  const isLive = input.isLiveStream ?? false;
   const { rows } = await pool.query(`
-    INSERT INTO tracks (id, slug, youtube_url, title, artist, artist_id, start_time_sec, end_time_sec, volume, notes, created_at, updated_at, audio_status, enrichment_status, enrichment_attempts, field_confidences)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, 'pending', 'none', 0, '[]'::jsonb)
+    INSERT INTO tracks (id, slug, youtube_url, title, artist, artist_id, start_time_sec, end_time_sec, volume, notes, created_at, updated_at, audio_status, enrichment_status, enrichment_attempts, field_confidences, is_live_stream)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, 'none', 0, '[]'::jsonb, $13)
     RETURNING *
   `, [
     id,
@@ -362,12 +645,22 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
     input.volume ?? 100,
     input.notes ?? '',
     now,
+    isLive ? 'ready' : 'pending',  // live streams are immediately "ready" (streamed)
+    isLive,
   ]);
 
   // Create track_artists join records
   if (artistIds && artistIds.length > 0) {
     await setTrackArtists(id, artistIds);
   }
+
+  // Create default variant for the track
+  const videoId = extractVideoId(input.youtubeUrl);
+  await pool.query(`
+    INSERT INTO track_variants (track_id, youtube_url, video_id, kind, label, is_preferred, position)
+    VALUES ($1, $2, $3, 'original', 'Original', true, 0)
+    ON CONFLICT (track_id, video_id) DO NOTHING
+  `, [id, input.youtubeUrl, videoId]);
 
   return populateTrack(rowToTrack(rows[0]));
 }
@@ -386,6 +679,7 @@ export async function updateTrack(id: string, input: UpdateTrackInput): Promise<
     ['endTimeSec', 'end_time_sec'],
     ['volume', 'volume'],
     ['notes', 'notes'],
+    ['isLiveStream', 'is_live_stream'],
     ['album', 'album'],
     ['albumId', 'album_id'],
     ['releaseYear', 'release_year'],
@@ -514,6 +808,18 @@ export async function updateTrackVideo(
     fields.videoFilename !== undefined ? fields.videoFilename : null,
   ]);
 
+  return rows.length > 0 ? rowToTrack(rows[0]) : null;
+}
+
+export async function updateTrackLyrics(
+  id: string,
+  lyrics: string | null,
+  lyricsSource: string | null,
+): Promise<Track | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    UPDATE tracks SET lyrics = $2, lyrics_source = $3 WHERE id = $1 RETURNING *
+  `, [id, lyrics, lyricsSource]);
   return rows.length > 0 ? rowToTrack(rows[0]) : null;
 }
 

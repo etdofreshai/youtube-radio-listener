@@ -18,6 +18,7 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
   const [endTimeError, setEndTimeError] = useState('');
   const [volume, setVolume] = useState(initial?.volume?.toString() ?? '100');
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [isLiveStream, setIsLiveStream] = useState(initial?.isLiveStream ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -98,6 +99,7 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
         endTimeSec: endTimeParsed ? endTimeParsed.value : null,
         volume: volume ? Math.min(200, Math.max(0, parseInt(volume, 10))) : 100,
         notes: notes.trim(),
+        isLiveStream,
       };
 
       if (title.trim()) data.title = title.trim();
@@ -133,6 +135,27 @@ export default function TrackForm({ initial, onSubmit, onCancel }: TrackFormProp
             💡 Title &amp; artist will be auto-detected from the video. You can override below.
           </p>
         )}
+      </div>
+
+      {/* Live Stream toggle */}
+      <div className="form-group">
+        <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={isLiveStream}
+            onChange={e => setIsLiveStream(e.target.checked)}
+            style={{ width: 18, height: 18 }}
+          />
+          <span>
+            {isLiveStream ? '📡 Live Stream' : '🎵 Downloaded Track'}
+          </span>
+        </label>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>
+          {isLiveStream
+            ? 'Audio will be streamed live from YouTube at play time. No file is downloaded.'
+            : 'Audio will be downloaded and stored locally for offline playback. Auto-detected for live YouTube URLs.'
+          }
+        </p>
       </div>
 
       <div className="form-row">

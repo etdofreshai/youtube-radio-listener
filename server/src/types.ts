@@ -86,6 +86,8 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // Live stream flag
+  isLiveStream: boolean;     // true = stream-only (no download), false = normal downloaded track
   // Audio pipeline fields
   audioStatus: AudioStatus;
   audioError: string | null;
@@ -96,10 +98,14 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   videoStatus: VideoStatus;
   videoError: string | null;
   videoFilename: string | null;
+  // Lyrics
+  lyrics: string | null;           // plain-text lyrics
+  lyricsSource: string | null;     // 'youtube-subtitles' | 'manual' | etc.
   // Populated relations (optional — included in API responses)
   artists?: ArtistSummary[];     // all linked artists (from track_artists join)
   albumName?: string | null;     // denormalized album title
   albumSlug?: string | null;     // denormalized album slug
+  variants?: TrackVariant[];     // all YouTube URL variants for this canonical track
 }
 
 /** Lightweight artist reference embedded in track responses */
@@ -191,6 +197,49 @@ export interface SessionEvent {
   createdAt: string;
 }
 
+// ---------- Track Variant ----------
+
+export type VariantKind =
+  | 'original'
+  | '4k'
+  | 'official-video'
+  | 'audio-only'
+  | 'live'
+  | 'remaster'
+  | 'lyric-video'
+  | 'remix'
+  | 'acoustic'
+  | 'other';
+
+export interface TrackVariant {
+  id: string;
+  trackId: string;
+  youtubeUrl: string;
+  videoId: string;
+  kind: VariantKind;
+  label: string;
+  isPreferred: boolean;
+  position: number;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVariantInput {
+  youtubeUrl: string;
+  kind?: VariantKind;
+  label?: string;
+  isPreferred?: boolean;
+  metadata?: Record<string, any>;
+}
+
+export interface UpdateVariantInput {
+  kind?: VariantKind;
+  label?: string;
+  isPreferred?: boolean;
+  metadata?: Record<string, any>;
+}
+
 // ---------- Favorite ----------
 
 export interface Favorite {
@@ -210,6 +259,7 @@ export interface CreateTrackInput {
   endTimeSec?: number | null;
   volume?: number;
   notes?: string;
+  isLiveStream?: boolean; // true = stream-only (no download)
 }
 
 export interface UpdateTrackInput {
@@ -222,6 +272,7 @@ export interface UpdateTrackInput {
   endTimeSec?: number | null;
   volume?: number;
   notes?: string;
+  isLiveStream?: boolean;
   // Allow manual metadata updates
   album?: string | null;
   releaseYear?: number | null;

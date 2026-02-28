@@ -103,6 +103,9 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // Live stream flag
+  isLiveStream: boolean;
+  // Audio pipeline fields
   audioStatus: AudioStatus;
   audioError: string | null;
   audioFilename: string | null;
@@ -112,10 +115,57 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   videoStatus: VideoStatus;
   videoError: string | null;
   videoFilename: string | null;
+  // Lyrics
+  lyrics: string | null;
+  lyricsSource: string | null;
   // Populated relations
   artists?: ArtistSummary[];
   albumName?: string | null;
   albumSlug?: string | null;
+  variants?: TrackVariant[];
+}
+
+// ---------- Track Variant ----------
+
+export type VariantKind =
+  | 'original'
+  | '4k'
+  | 'official-video'
+  | 'audio-only'
+  | 'live'
+  | 'remaster'
+  | 'lyric-video'
+  | 'remix'
+  | 'acoustic'
+  | 'other';
+
+export interface TrackVariant {
+  id: string;
+  trackId: string;
+  youtubeUrl: string;
+  videoId: string;
+  kind: VariantKind;
+  label: string;
+  isPreferred: boolean;
+  position: number;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVariantInput {
+  youtubeUrl: string;
+  kind?: VariantKind;
+  label?: string;
+  isPreferred?: boolean;
+  metadata?: Record<string, any>;
+}
+
+export interface UpdateVariantInput {
+  kind?: VariantKind;
+  label?: string;
+  isPreferred?: boolean;
+  metadata?: Record<string, any>;
 }
 
 // ---------- Pagination / Sort ----------
@@ -254,6 +304,7 @@ export interface CreateTrackInput {
   endTimeSec?: number | null;
   volume?: number;
   notes?: string;
+  isLiveStream?: boolean;
 }
 
 export interface UpdateTrackInput {
@@ -266,6 +317,7 @@ export interface UpdateTrackInput {
   endTimeSec?: number | null;
   volume?: number;
   notes?: string;
+  isLiveStream?: boolean;
   album?: string | null;
   releaseYear?: number | null;
   genre?: string | null;
