@@ -6,7 +6,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "song:explore": "tsx src/song-explorations/index.ts",
+    "song:discover": "tsx src/song-explorations/index.ts discover",
+    "song:import": "tsx src/song-explorations/index.ts import",
+    "song:status": "tsx src/song-explorations/index.ts status",
+    "song:cron": "tsx src/song-explorations/index.ts cron"
   },
   "dependencies": {
     "cors": "^2.8.5",

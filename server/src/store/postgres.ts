@@ -7,12 +7,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../db/pool';
 import type {
   Track, Playlist, Favorite,
+  Artist, Album,
+  PlaySession, SessionMember, SessionState, SessionEvent,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
   AudioStatus, EnrichmentStatus, FieldConfidence,
   PaginationParams, PaginatedResponse,
   SortableTrackField, SortDirection,
 } from '../types';
+import { trackSlug, artistSlug, albumSlug, slugify } from '../utils/slug';
 
 // ============================================================
 // Row ↔ Object Mapping
@@ -21,9 +24,12 @@ import type {
 function rowToTrack(row: any): Track {
   return {
     id: row.id,
+    slug: row.slug || null,
     youtubeUrl: row.youtube_url,
     title: row.title,
     artist: row.artist,
+    artistId: row.artist_id || null,
+    albumId: row.album_id || null,
     startTimeSec: row.start_time_sec,
     endTimeSec: row.end_time_sec,
     volume: row.volume,
@@ -79,6 +85,7 @@ function rowToPlaylist(row: any, trackIds: string[]): Playlist {
   return {
     id: row.id,
     name: row.name,
+    slug: row.slug || null,
     description: row.description || '',
     trackIds,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
@@ -194,9 +201,13 @@ export async function getTracksNeedingEnrichment(limit: number, now: number): Pr
   return rows.map(rowToTrack);
 }
 
-export async function getTrack(id: string): Promise<Track | undefined> {
+/** Lookup by UUID or slug */
+export async function getTrack(idOrSlug: string): Promise<Track | undefined> {
   const pool = getPool();
-  const { rows } = await pool.query('SELECT * FROM tracks WHERE id = $1', [id]);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+  const { rows } = isUuid
+    ? await pool.query('SELECT * FROM tracks WHERE id = $1', [idOrSlug])
+    : await pool.query('SELECT * FROM tracks WHERE slug = $1', [idOrSlug]);
   return rows.length > 0 ? rowToTrack(rows[0]) : undefined;
 }
 
@@ -204,13 +215,15 @@ export async function createTrack(input: CreateTrackInput): Promise<Track> {
   const pool = getPool();
   const id = uuidv4();
   const now = new Date().toISOString();
+  const slug = await generateUniqueSlug(pool, 'tracks', trackSlug(input.artist, input.title));
 
   const { rows } = await pool.query(`
-    INSERT INTO tracks (id, youtube_url, title, artist, start_time_sec, end_time_sec, volume, notes, created_at, updated_at, audio_status, enrichment_status, enrichment_attempts, field_confidences)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, 'pending', 'none', 0, '[]'::jsonb)
+    INSERT INTO tracks (id, slug, youtube_url, title, artist, start_time_sec, end_time_sec, volume, notes, created_at, updated_at, audio_status, enrichment_status, enrichment_attempts, field_confidences)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, 'pending', 'none', 0, '[]'::jsonb)
     RETURNING *
   `, [
     id,
+    slug,
     input.youtubeUrl,
     input.title,
     input.artist,
@@ -415,11 +428,15 @@ export async function getAllPlaylists(): Promise<Playlist[]> {
   return playlists;
 }
 
-export async function getPlaylist(id: string): Promise<Playlist | undefined> {
+/** Lookup by UUID or slug */
+export async function getPlaylist(idOrSlug: string): Promise<Playlist | undefined> {
   const pool = getPool();
-  const { rows } = await pool.query('SELECT * FROM playlists WHERE id = $1', [id]);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+  const { rows } = isUuid
+    ? await pool.query('SELECT * FROM playlists WHERE id = $1', [idOrSlug])
+    : await pool.query('SELECT * FROM playlists WHERE slug = $1', [idOrSlug]);
   if (rows.length === 0) return undefined;
-  const trackIds = await getPlaylistTrackIds(id);
+  const trackIds = await getPlaylistTrackIds(rows[0].id);
   return rowToPlaylist(rows[0], trackIds);
 }
 
@@ -431,12 +448,13 @@ export async function createPlaylist(input: CreatePlaylistInput): Promise<Playli
     await client.query('BEGIN');
     const id = uuidv4();
     const now = new Date().toISOString();
+    const slug = await generateUniqueSlug(pool, 'playlists', slugify(input.name));
 
     const { rows } = await client.query(`
-      INSERT INTO playlists (id, name, description, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $4)
+      INSERT INTO playlists (id, slug, name, description, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $5)
       RETURNING *
-    `, [id, input.name, input.description ?? '', now]);
+    `, [id, slug, input.name, input.description ?? '', now]);
 
     // Insert track associations
     const trackIds = input.trackIds ?? [];
@@ -676,4 +694,440 @@ export async function getEvents(opts?: {
     pageSize,
     totalPages,
   };
+}
+
+// ============================================================
+// Slug Helpers
+// ============================================================
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuid(s: string): boolean { return UUID_RE.test(s); }
+
+/** Generate a unique slug by appending -2, -3, etc. on collision */
+async function generateUniqueSlug(pool: any, table: string, baseSlug: string): Promise<string> {
+  let slug = baseSlug;
+  let attempt = 0;
+  while (true) {
+    const { rows } = await pool.query(`SELECT 1 FROM ${table} WHERE slug = $1`, [slug]);
+    if (rows.length === 0) return slug;
+    attempt++;
+    slug = `${baseSlug}-${attempt + 1}`;
+    if (attempt > 100) return `${baseSlug}-${uuidv4().slice(0, 8)}`;
+  }
+}
+
+// ============================================================
+// Artists
+// ============================================================
+
+function rowToArtist(row: any): Artist {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    imageUrl: row.image_url || null,
+    bio: row.bio || null,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+export async function getArtist(idOrSlug: string): Promise<Artist | undefined> {
+  const pool = getPool();
+  const { rows } = isUuid(idOrSlug)
+    ? await pool.query('SELECT * FROM artists WHERE id = $1', [idOrSlug])
+    : await pool.query('SELECT * FROM artists WHERE slug = $1', [idOrSlug]);
+  return rows.length > 0 ? rowToArtist(rows[0]) : undefined;
+}
+
+export async function getAllArtists(): Promise<Artist[]> {
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT * FROM artists ORDER BY name ASC');
+  return rows.map(rowToArtist);
+}
+
+export async function createArtist(input: { name: string; imageUrl?: string; bio?: string }): Promise<Artist> {
+  const pool = getPool();
+  const id = uuidv4();
+  const slug = await generateUniqueSlug(pool, 'artists', artistSlug(input.name));
+  const { rows } = await pool.query(`
+    INSERT INTO artists (id, name, slug, image_url, bio)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING *
+  `, [id, input.name, slug, input.imageUrl ?? null, input.bio ?? null]);
+  return rowToArtist(rows[0]);
+}
+
+export async function updateArtist(id: string, input: { name?: string; imageUrl?: string | null; bio?: string | null }): Promise<Artist | null> {
+  const pool = getPool();
+  const sets: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+  if (input.name !== undefined) { sets.push(`name = $${idx}`); values.push(input.name); idx++; }
+  if (input.imageUrl !== undefined) { sets.push(`image_url = $${idx}`); values.push(input.imageUrl); idx++; }
+  if (input.bio !== undefined) { sets.push(`bio = $${idx}`); values.push(input.bio); idx++; }
+  if (sets.length === 0) { const a = await getArtist(id); return a || null; }
+  values.push(id);
+  const { rows } = await pool.query(`UPDATE artists SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`, values);
+  return rows.length > 0 ? rowToArtist(rows[0]) : null;
+}
+
+/** Find or create artist by name (for auto-linking) */
+export async function findOrCreateArtist(name: string): Promise<Artist> {
+  const pool = getPool();
+  const slug = artistSlug(name);
+  const { rows } = await pool.query('SELECT * FROM artists WHERE slug = $1', [slug]);
+  if (rows.length > 0) return rowToArtist(rows[0]);
+  return createArtist({ name });
+}
+
+// ============================================================
+// Albums
+// ============================================================
+
+function rowToAlbum(row: any): Album {
+  return {
+    id: row.id,
+    title: row.title,
+    slug: row.slug,
+    artistId: row.artist_id || null,
+    artistName: row.artist_name || null,
+    releaseYear: row.release_year || null,
+    artworkUrl: row.artwork_url || null,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+export async function getAlbum(idOrSlug: string): Promise<Album | undefined> {
+  const pool = getPool();
+  const q = `SELECT al.*, ar.name as artist_name FROM albums al LEFT JOIN artists ar ON al.artist_id = ar.id`;
+  const { rows } = isUuid(idOrSlug)
+    ? await pool.query(`${q} WHERE al.id = $1`, [idOrSlug])
+    : await pool.query(`${q} WHERE al.slug = $1`, [idOrSlug]);
+  return rows.length > 0 ? rowToAlbum(rows[0]) : undefined;
+}
+
+export async function getAllAlbums(): Promise<Album[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT al.*, ar.name as artist_name FROM albums al LEFT JOIN artists ar ON al.artist_id = ar.id ORDER BY al.title ASC`
+  );
+  return rows.map(rowToAlbum);
+}
+
+export async function createAlbum(input: { title: string; artistId?: string; releaseYear?: number; artworkUrl?: string }): Promise<Album> {
+  const pool = getPool();
+  const id = uuidv4();
+  // Determine artist name for slug
+  let artName = '';
+  if (input.artistId) {
+    const ar = await getArtist(input.artistId);
+    artName = ar?.name ?? '';
+  }
+  const slug = await generateUniqueSlug(pool, 'albums', albumSlug(artName, input.title));
+  const { rows } = await pool.query(`
+    INSERT INTO albums (id, title, slug, artist_id, release_year, artwork_url)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING *
+  `, [id, input.title, slug, input.artistId ?? null, input.releaseYear ?? null, input.artworkUrl ?? null]);
+  // Fetch with join for artist_name
+  return (await getAlbum(id))!;
+}
+
+export async function findOrCreateAlbum(title: string, artistId?: string, releaseYear?: number): Promise<Album> {
+  const pool = getPool();
+  let artName = '';
+  if (artistId) {
+    const ar = await getArtist(artistId);
+    artName = ar?.name ?? '';
+  }
+  const slug = albumSlug(artName, title);
+  const { rows } = await pool.query('SELECT * FROM albums WHERE slug = $1', [slug]);
+  if (rows.length > 0) return (await getAlbum(rows[0].id))!;
+  return createAlbum({ title, artistId, releaseYear });
+}
+
+// ============================================================
+// Play Sessions
+// ============================================================
+
+function rowToSession(row: any): PlaySession {
+  return {
+    id: row.id,
+    token: row.token,
+    name: row.name,
+    ownerId: row.owner_id,
+    playlistId: row.playlist_id || null,
+    isActive: row.is_active,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+    endedAt: row.ended_at ? (row.ended_at instanceof Date ? row.ended_at.toISOString() : row.ended_at) : null,
+  };
+}
+
+function rowToMember(row: any): SessionMember {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    userId: row.user_id,
+    role: row.role,
+    joinedAt: row.joined_at instanceof Date ? row.joined_at.toISOString() : row.joined_at,
+    leftAt: row.left_at ? (row.left_at instanceof Date ? row.left_at.toISOString() : row.left_at) : null,
+  };
+}
+
+function rowToSessionState(row: any): SessionState {
+  return {
+    sessionId: row.session_id,
+    currentTrackId: row.current_track_id || null,
+    isPlaying: row.is_playing,
+    positionSec: parseFloat(row.position_sec) || 0,
+    positionUpdatedAt: row.position_updated_at instanceof Date ? row.position_updated_at.toISOString() : row.position_updated_at,
+    queue: Array.isArray(row.queue) ? row.queue : (typeof row.queue === 'string' ? JSON.parse(row.queue) : []),
+    updatedBy: row.updated_by || null,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+function rowToSessionEvent(row: any): SessionEvent {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    userId: row.user_id || null,
+    eventType: row.event_type,
+    metadata: row.metadata || {},
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+export async function createSession(input: { name?: string; ownerId: string; playlistId?: string; queue?: string[] }): Promise<{ session: PlaySession; state: SessionState }> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const id = uuidv4();
+    const token = uuidv4();
+
+    const { rows: sRows } = await client.query(`
+      INSERT INTO play_sessions (id, token, name, owner_id, playlist_id)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `, [id, token, input.name ?? 'Listening Session', input.ownerId, input.playlistId ?? null]);
+
+    // Create initial state
+    await client.query(`
+      INSERT INTO session_state (session_id, queue, updated_by)
+      VALUES ($1, $2, $3)
+    `, [id, JSON.stringify(input.queue ?? []), input.ownerId]);
+
+    // Add owner as member
+    await client.query(`
+      INSERT INTO session_members (session_id, user_id, role)
+      VALUES ($1, $2, 'owner')
+    `, [id, input.ownerId]);
+
+    // Session event
+    await client.query(`
+      INSERT INTO session_events (session_id, user_id, event_type, metadata)
+      VALUES ($1, $2, 'session_created', '{}')
+    `, [id, input.ownerId]);
+
+    await client.query('COMMIT');
+
+    const session = rowToSession(sRows[0]);
+    const stateResult = await pool.query('SELECT * FROM session_state WHERE session_id = $1', [id]);
+    const state = rowToSessionState(stateResult.rows[0]);
+
+    return { session, state };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getSession(token: string): Promise<PlaySession | undefined> {
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT * FROM play_sessions WHERE token = $1', [token]);
+  return rows.length > 0 ? rowToSession(rows[0]) : undefined;
+}
+
+export async function getSessionById(id: string): Promise<PlaySession | undefined> {
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT * FROM play_sessions WHERE id = $1', [id]);
+  return rows.length > 0 ? rowToSession(rows[0]) : undefined;
+}
+
+export async function getSessionState(sessionId: string): Promise<SessionState | undefined> {
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT * FROM session_state WHERE session_id = $1', [sessionId]);
+  return rows.length > 0 ? rowToSessionState(rows[0]) : undefined;
+}
+
+export async function getSessionMembers(sessionId: string): Promise<SessionMember[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    'SELECT * FROM session_members WHERE session_id = $1 AND left_at IS NULL ORDER BY joined_at ASC',
+    [sessionId]
+  );
+  return rows.map(rowToMember);
+}
+
+export async function joinSession(sessionId: string, userId: string): Promise<SessionMember> {
+  const pool = getPool();
+  // Check if already a member
+  const { rows: existing } = await pool.query(
+    'SELECT * FROM session_members WHERE session_id = $1 AND user_id = $2 AND left_at IS NULL',
+    [sessionId, userId]
+  );
+  if (existing.length > 0) return rowToMember(existing[0]);
+
+  // Check if previously left — update instead of insert
+  const { rows: left } = await pool.query(
+    'SELECT * FROM session_members WHERE session_id = $1 AND user_id = $2 AND left_at IS NOT NULL',
+    [sessionId, userId]
+  );
+  if (left.length > 0) {
+    const { rows } = await pool.query(
+      'UPDATE session_members SET left_at = NULL, joined_at = now() WHERE id = $1 RETURNING *',
+      [left[0].id]
+    );
+    await pool.query(`INSERT INTO session_events (session_id, user_id, event_type) VALUES ($1, $2, 'member_joined')`, [sessionId, userId]);
+    return rowToMember(rows[0]);
+  }
+
+  const { rows } = await pool.query(`
+    INSERT INTO session_members (session_id, user_id, role) VALUES ($1, $2, 'member') RETURNING *
+  `, [sessionId, userId]);
+
+  await pool.query(`INSERT INTO session_events (session_id, user_id, event_type) VALUES ($1, $2, 'member_joined')`, [sessionId, userId]);
+
+  return rowToMember(rows[0]);
+}
+
+export async function leaveSession(sessionId: string, userId: string): Promise<boolean> {
+  const pool = getPool();
+  const { rowCount } = await pool.query(
+    'UPDATE session_members SET left_at = now() WHERE session_id = $1 AND user_id = $2 AND left_at IS NULL',
+    [sessionId, userId]
+  );
+  if ((rowCount ?? 0) > 0) {
+    await pool.query(`INSERT INTO session_events (session_id, user_id, event_type) VALUES ($1, $2, 'member_left')`, [sessionId, userId]);
+  }
+  return (rowCount ?? 0) > 0;
+}
+
+export async function updateSessionState(
+  sessionId: string,
+  userId: string,
+  update: Partial<Pick<SessionState, 'currentTrackId' | 'isPlaying' | 'positionSec' | 'queue'>>
+): Promise<SessionState | null> {
+  const pool = getPool();
+  const sets: string[] = ['updated_by = $1', 'updated_at = now()'];
+  const values: any[] = [userId];
+  let idx = 2;
+
+  if (update.currentTrackId !== undefined) {
+    sets.push(`current_track_id = $${idx}`);
+    values.push(update.currentTrackId);
+    idx++;
+  }
+  if (update.isPlaying !== undefined) {
+    sets.push(`is_playing = $${idx}`);
+    values.push(update.isPlaying);
+    idx++;
+  }
+  if (update.positionSec !== undefined) {
+    sets.push(`position_sec = $${idx}`, 'position_updated_at = now()');
+    values.push(update.positionSec);
+    idx++;
+  }
+  if (update.queue !== undefined) {
+    sets.push(`queue = $${idx}`);
+    values.push(JSON.stringify(update.queue));
+    idx++;
+  }
+
+  values.push(sessionId);
+  const { rows } = await pool.query(
+    `UPDATE session_state SET ${sets.join(', ')} WHERE session_id = $${idx} RETURNING *`,
+    values
+  );
+
+  return rows.length > 0 ? rowToSessionState(rows[0]) : null;
+}
+
+export async function regenerateSessionToken(sessionId: string, ownerId: string): Promise<string | null> {
+  const pool = getPool();
+  // Verify ownership
+  const session = await getSessionById(sessionId);
+  if (!session || session.ownerId !== ownerId) return null;
+
+  const newToken = uuidv4();
+  await pool.query('UPDATE play_sessions SET token = $1 WHERE id = $2', [newToken, sessionId]);
+  await pool.query(
+    `INSERT INTO session_events (session_id, user_id, event_type, metadata) VALUES ($1, $2, 'token_regenerated', $3)`,
+    [sessionId, ownerId, JSON.stringify({ oldToken: session.token, newToken })]
+  );
+  return newToken;
+}
+
+export async function endSession(sessionId: string, ownerId: string): Promise<boolean> {
+  const pool = getPool();
+  const session = await getSessionById(sessionId);
+  if (!session || session.ownerId !== ownerId) return false;
+
+  await pool.query('UPDATE play_sessions SET is_active = false, ended_at = now() WHERE id = $1', [sessionId]);
+  await pool.query('UPDATE session_state SET is_playing = false WHERE session_id = $1', [sessionId]);
+  await pool.query(
+    `INSERT INTO session_events (session_id, user_id, event_type) VALUES ($1, $2, 'session_ended')`,
+    [sessionId, ownerId]
+  );
+  return true;
+}
+
+export async function recordSessionEvent(
+  sessionId: string,
+  userId: string | null,
+  eventType: string,
+  metadata?: Record<string, any>
+): Promise<SessionEvent> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    INSERT INTO session_events (session_id, user_id, event_type, metadata)
+    VALUES ($1, $2, $3, $4)
+    RETURNING *
+  `, [sessionId, userId, eventType, JSON.stringify(metadata ?? {})]);
+  return rowToSessionEvent(rows[0]);
+}
+
+export async function getSessionEvents(sessionId: string, opts?: { page?: number; pageSize?: number }): Promise<{ data: SessionEvent[]; total: number; page: number; pageSize: number; totalPages: number }> {
+  const pool = getPool();
+  const page = opts?.page ?? 1;
+  const pageSize = opts?.pageSize ?? 50;
+
+  const countResult = await pool.query('SELECT COUNT(*) as cnt FROM session_events WHERE session_id = $1', [sessionId]);
+  const total = parseInt(countResult.rows[0].cnt, 10);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const offset = (Math.min(page, totalPages) - 1) * pageSize;
+
+  const { rows } = await pool.query(
+    'SELECT * FROM session_events WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+    [sessionId, pageSize, offset]
+  );
+
+  return { data: rows.map(rowToSessionEvent), total, page: Math.min(page, totalPages), pageSize, totalPages };
+}
+
+export async function getUserSessions(userId: string): Promise<PlaySession[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT DISTINCT ps.* FROM play_sessions ps
+    JOIN session_members sm ON sm.session_id = ps.id
+    WHERE sm.user_id = $1
+    ORDER BY ps.updated_at DESC
+  `, [userId]);
+  return rows.map(rowToSession);
 }

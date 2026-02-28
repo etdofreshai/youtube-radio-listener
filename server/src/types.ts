@@ -73,9 +73,12 @@ export interface TrackVerification {
 
 export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentState, TrackVerification {
   id: string;
+  slug: string | null;
   youtubeUrl: string;
   title: string;
   artist: string;
+  artistId: string | null;  // FK to artists table
+  albumId: string | null;   // FK to albums table
   startTimeSec: number | null;
   endTimeSec: number | null;
   volume: number; // 0-200 (percentage; >100 = amplification via gain)
@@ -90,15 +93,85 @@ export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentSt
   lastDownloadAt: string | null;
 }
 
+// ---------- Artist ----------
+
+export interface Artist {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl: string | null;
+  bio: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------- Album ----------
+
+export interface Album {
+  id: string;
+  title: string;
+  slug: string;
+  artistId: string | null;
+  artistName: string | null;  // denormalized for convenience
+  releaseYear: number | null;
+  artworkUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---------- Playlist ----------
 
 export interface Playlist {
   id: string;
   name: string;
+  slug: string | null;
   description: string;
   trackIds: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------- Play Session ----------
+
+export interface PlaySession {
+  id: string;
+  token: string;           // shareable link token
+  name: string;
+  ownerId: string;
+  playlistId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+}
+
+export interface SessionMember {
+  id: string;
+  sessionId: string;
+  userId: string;
+  role: 'owner' | 'member';
+  joinedAt: string;
+  leftAt: string | null;
+}
+
+export interface SessionState {
+  sessionId: string;
+  currentTrackId: string | null;
+  isPlaying: boolean;
+  positionSec: number;
+  positionUpdatedAt: string;  // ISO — client calculates actual position as: positionSec + (now - positionUpdatedAt) if isPlaying
+  queue: string[];            // ordered track IDs
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
+export interface SessionEvent {
+  id: string;
+  sessionId: string;
+  userId: string | null;
+  eventType: string;
+  metadata: Record<string, any>;
+  createdAt: string;
 }
 
 // ---------- Favorite ----------

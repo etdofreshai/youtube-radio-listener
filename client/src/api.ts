@@ -1,7 +1,7 @@
 import type {
   Track, Playlist, Favorite, CreateTrackInput, UpdateTrackInput, CreatePlaylistInput,
   PaginatedResponse, SortableTrackField, SortDirection, SchedulerStatus,
-  PaginatedEvents,
+  PaginatedEvents, PlaySession, SessionState, SessionMember, SessionFull,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL || '';
@@ -156,3 +156,40 @@ export const getMyEvents = (params?: { page?: number; pageSize?: number; eventTy
   const qs = query.toString();
   return request<PaginatedEvents>(`/api/events/my${qs ? '?' + qs : ''}`);
 };
+
+// ---------- Play Sessions ----------
+
+export const createSession = (data: { name?: string; playlistId?: string; queue?: string[] }) =>
+  request<{ session: PlaySession; state: SessionState }>('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+export const getSession = (token: string) =>
+  request<SessionFull>(`/api/sessions/${token}`);
+
+export const getMySessions = () =>
+  request<PlaySession[]>('/api/sessions/mine');
+
+export const joinSession = (token: string) =>
+  request<SessionFull>(`/api/sessions/${token}/join`, { method: 'POST' });
+
+export const leaveSession = (token: string) =>
+  request<{ message: string }>(`/api/sessions/${token}/leave`, { method: 'POST' });
+
+export const getSessionState = (token: string) =>
+  request<{ state: SessionState; currentTrack: Track | null }>(`/api/sessions/${token}/state`);
+
+export const updateSessionState = (token: string, action: string, data?: { trackId?: string; positionSec?: number; queue?: string[] }) =>
+  request<{ state: SessionState; currentTrack: Track | null }>(`/api/sessions/${token}/state`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...data }),
+  });
+
+export const regenerateSessionToken = (token: string) =>
+  request<{ token: string; message: string }>(`/api/sessions/${token}/regenerate`, { method: 'POST' });
+
+export const endSessionApi = (token: string) =>
+  request<{ message: string }>(`/api/sessions/${token}/end`, { method: 'POST' });

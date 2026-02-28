@@ -1,0 +1,57 @@
+{
+  "description": "Sample seed data for dry-run mode. Replace with your own favorites.",
+  "seeds": [
+    {
+      "videoId": "dQw4w9WgXcQ",
+      "title": "Rick Astley - Never Gonna Give You Up",
+      "channelName": "Rick Astley",
+      "channelId": "UCuAXFkgsw1L7xaCfnd5JJOw",
+      "durationSeconds": 213,
+      "plays": 42,
+      "note": "Classic — high play count seed"
+    },
+    {
+      "videoId": "fJ9rUzIMcZQ",
+      "title": "Queen – Bohemian Rhapsody",
+      "channelName": "Queen Official",
+      "channelId": "UCiMhD4jzUqG-IgPzUmmytRQ",
+      "durationSeconds": 354,
+      "plays": 30,
+      "note": "Rock classic"
+    },
+    {
+      "videoId": "hTWKbfoikeg",
+      "title": "Nirvana - Smells Like Teen Spirit",
+      "channelName": "Nirvana",
+      "channelId": "UCFMSUaGMfFOXlnR1-jQ10aw",
+      "durationSeconds": 301,
+      "plays": 25,
+      "note": "Grunge classic"
+    },
+    {
+      "videoId": "kJQP7kiw5Fk",
+      "title": "Luis Fonsi - Despacito ft. Daddy Yankee",
+      "channelName": "Luis Fonsi",
+      "channelId": "UCLp8RBhQHu9wSsq62j_Md6A",
+      "durationSeconds": 282,
+      "plays": 15,
+      "note": "Pop/Latin hit"
+    },
+    {
+      "videoId": "JGwWNGJdvx8",
+      "title": "Ed Sheeran - Shape of You",
+      "channelName": "Ed Sheeran",
+      "channelId": "UC0C-w0YjGpqDXGB8IHb662A",
+      "durationSeconds": 263,
+      "plays": 20,
+      "note": "Pop hit"
+    }
+  ],
+  "searchQueries": [
+    "indie music 2025",
+    "lo-fi hip hop radio",
+    "synthwave retrowave mix",
+    "jazz fusion guitar",
+    "chill electronic ambient"
+  ]
+}

@@ -58,9 +58,12 @@ export interface TrackVerification {
 
 export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentState, TrackVerification {
   id: string;
+  slug: string | null;
   youtubeUrl: string;
   title: string;
   artist: string;
+  artistId: string | null;
+  albumId: string | null;
   startTimeSec: number | null;
   endTimeSec: number | null;
   volume: number;
@@ -116,11 +119,62 @@ export interface SchedulerStatus {
 
 export interface Playlist {
   id: string;
+  slug: string | null;
   name: string;
   description: string;
   trackIds: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------- Play Session ----------
+
+export interface PlaySession {
+  id: string;
+  token: string;
+  name: string;
+  ownerId: string;
+  playlistId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+}
+
+export interface SessionState {
+  sessionId: string;
+  currentTrackId: string | null;
+  isPlaying: boolean;
+  positionSec: number;
+  positionUpdatedAt: string;
+  queue: string[];
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
+export interface SessionMember {
+  id: string;
+  sessionId: string;
+  userId: string;
+  role: 'owner' | 'member';
+  joinedAt: string;
+  leftAt: string | null;
+}
+
+export interface SessionEvent {
+  id: string;
+  sessionId: string;
+  userId: string | null;
+  eventType: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+}
+
+export interface SessionFull {
+  session: PlaySession;
+  state: SessionState;
+  members: SessionMember[];
+  currentTrack?: Track | null;
 }
 
 export interface Favorite {

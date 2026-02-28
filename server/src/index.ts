@@ -8,6 +8,9 @@ import playlistsRouter from './routes/playlists';
 import favoritesRouter from './routes/favorites';
 import audioRouter from './routes/audio';
 import eventsRouter from './routes/events';
+import sessionsRouter from './routes/sessions';
+import artistsRouter from './routes/artists';
+import albumsRouter from './routes/albums';
 import { startScheduler } from './services/scheduler';
 import { logStartupDiagnostics } from './deps';
 
@@ -25,6 +28,9 @@ app.use('/api/playlists', playlistsRouter);
 app.use('/api/favorites', favoritesRouter);
 app.use('/api/audio', audioRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/sessions', sessionsRouter);
+app.use('/api/artists', artistsRouter);
+app.use('/api/albums', albumsRouter);
 
 // Serve static frontend in production
 const clientDist = path.join(__dirname, '../../client/dist');

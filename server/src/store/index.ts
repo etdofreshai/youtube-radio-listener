@@ -11,6 +11,7 @@
 import * as memStore from './memory';
 import * as pgStore from './postgres';
 export type { AppEvent } from './postgres';
+export { isUuid } from './postgres';
 
 const usePostgres = !!process.env.DATABASE_URL;
 
@@ -144,6 +145,109 @@ export async function getEvents(...args: Parameters<typeof pgStore.getEvents>): 
     return { data: [], total: 0, page: 1, pageSize: 50, totalPages: 0 };
   }
   return pgStore.getEvents(...args);
+}
+
+// ============================================================
+// Artists (postgres-only)
+// ============================================================
+
+export function getArtist(idOrSlug: string) {
+  if (!usePostgres) return Promise.resolve(undefined);
+  return pgStore.getArtist(idOrSlug);
+}
+export function getAllArtists() {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getAllArtists();
+}
+export function createArtist(...args: Parameters<typeof pgStore.createArtist>) {
+  if (!usePostgres) throw new Error('Artists require PostgreSQL');
+  return pgStore.createArtist(...args);
+}
+export function updateArtist(...args: Parameters<typeof pgStore.updateArtist>) {
+  if (!usePostgres) throw new Error('Artists require PostgreSQL');
+  return pgStore.updateArtist(...args);
+}
+export function findOrCreateArtist(name: string) {
+  if (!usePostgres) throw new Error('Artists require PostgreSQL');
+  return pgStore.findOrCreateArtist(name);
+}
+
+// ============================================================
+// Albums (postgres-only)
+// ============================================================
+
+export function getAlbum(idOrSlug: string) {
+  if (!usePostgres) return Promise.resolve(undefined);
+  return pgStore.getAlbum(idOrSlug);
+}
+export function getAllAlbums() {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getAllAlbums();
+}
+export function createAlbum(...args: Parameters<typeof pgStore.createAlbum>) {
+  if (!usePostgres) throw new Error('Albums require PostgreSQL');
+  return pgStore.createAlbum(...args);
+}
+export function findOrCreateAlbum(...args: Parameters<typeof pgStore.findOrCreateAlbum>) {
+  if (!usePostgres) throw new Error('Albums require PostgreSQL');
+  return pgStore.findOrCreateAlbum(...args);
+}
+
+// ============================================================
+// Play Sessions (postgres-only)
+// ============================================================
+
+export function createSession(...args: Parameters<typeof pgStore.createSession>) {
+  if (!usePostgres) throw new Error('Sessions require PostgreSQL');
+  return pgStore.createSession(...args);
+}
+export function getSession(token: string) {
+  if (!usePostgres) return Promise.resolve(undefined);
+  return pgStore.getSession(token);
+}
+export function getSessionById(id: string) {
+  if (!usePostgres) return Promise.resolve(undefined);
+  return pgStore.getSessionById(id);
+}
+export function getSessionState(sessionId: string) {
+  if (!usePostgres) return Promise.resolve(undefined);
+  return pgStore.getSessionState(sessionId);
+}
+export function getSessionMembers(sessionId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getSessionMembers(sessionId);
+}
+export function joinSession(...args: Parameters<typeof pgStore.joinSession>) {
+  if (!usePostgres) throw new Error('Sessions require PostgreSQL');
+  return pgStore.joinSession(...args);
+}
+export function leaveSession(...args: Parameters<typeof pgStore.leaveSession>) {
+  if (!usePostgres) throw new Error('Sessions require PostgreSQL');
+  return pgStore.leaveSession(...args);
+}
+export function updateSessionState(...args: Parameters<typeof pgStore.updateSessionState>) {
+  if (!usePostgres) throw new Error('Sessions require PostgreSQL');
+  return pgStore.updateSessionState(...args);
+}
+export function regenerateSessionToken(...args: Parameters<typeof pgStore.regenerateSessionToken>) {
+  if (!usePostgres) throw new Error('Sessions require PostgreSQL');
+  return pgStore.regenerateSessionToken(...args);
+}
+export function endSession(...args: Parameters<typeof pgStore.endSession>) {
+  if (!usePostgres) throw new Error('Sessions require PostgreSQL');
+  return pgStore.endSession(...args);
+}
+export function recordSessionEvent(...args: Parameters<typeof pgStore.recordSessionEvent>) {
+  if (!usePostgres) throw new Error('Sessions require PostgreSQL');
+  return pgStore.recordSessionEvent(...args);
+}
+export function getSessionEvents(...args: Parameters<typeof pgStore.getSessionEvents>) {
+  if (!usePostgres) return Promise.resolve({ data: [], total: 0, page: 1, pageSize: 50, totalPages: 0 });
+  return pgStore.getSessionEvents(...args);
+}
+export function getUserSessions(userId: string) {
+  if (!usePostgres) return Promise.resolve([]);
+  return pgStore.getUserSessions(userId);
 }
 
 // ============================================================

@@ -4,6 +4,8 @@ import PlaylistsPage from './pages/PlaylistsPage';
 import PlaylistEditorPage from './pages/PlaylistEditorPage';
 import FavoritesPage from './pages/FavoritesPage';
 import HistoryPage from './pages/HistoryPage';
+import SessionsPage from './pages/SessionsPage';
+import SessionPage from './pages/SessionPage';
 import { AudioPlayerProvider, PlayerBar } from './components/AudioPlayer';
 
 function App() {
@@ -22,6 +24,9 @@ function App() {
             <NavLink to="/favorites" className={({ isActive }) => isActive ? 'active' : ''}>
               ❤️ Favorites
             </NavLink>
+            <NavLink to="/sessions" className={({ isActive }) => isActive ? 'active' : ''}>
+              🎧 Sessions
+            </NavLink>
             <NavLink to="/history" className={({ isActive }) => isActive ? 'active' : ''}>
               📜 History
             </NavLink>
@@ -33,6 +38,8 @@ function App() {
             <Route path="/playlists" element={<PlaylistsPage />} />
             <Route path="/playlists/:id" element={<PlaylistEditorPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
+            <Route path="/sessions" element={<SessionsPage />} />
+            <Route path="/session/:token" element={<SessionPage />} />
             <Route path="/history" element={<HistoryPage />} />
           </Routes>
         </main>
