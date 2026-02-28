@@ -27,7 +27,7 @@ function makePlaylistInfo(overrides: Partial<YouTubePlaylistInfo> = {}): YouTube
     playlistTitle: 'Test Playlist',
     totalAvailable: 3,
     truncated: false,
-    limit: 100,
+    limit: 500,
     items: [
       { videoId: 'vid1', youtubeUrl: 'https://www.youtube.com/watch?v=vid1', title: 'Song 1', channel: 'Artist A', position: 0 },
       { videoId: 'vid2', youtubeUrl: 'https://www.youtube.com/watch?v=vid2', title: 'Song 2', channel: 'Artist B', position: 1 },
@@ -118,7 +118,7 @@ describe('importPlaylistTracks – structured summary', () => {
     assert.strictEqual(result.total, 3);
     assert.strictEqual(result.playlistTitle, 'Test Playlist');
     assert.strictEqual(result.truncated, false);
-    assert.strictEqual(result.limit, 100);
+    assert.strictEqual(result.limit, 500);
   });
 
   it('skips already-existing items into skipped_existing', async () => {
@@ -195,12 +195,12 @@ describe('importPlaylistTracks – structured summary', () => {
     };
 
     const result = await importPlaylistTracks(
-      makePlaylistInfo({ truncated: true, limit: 100, totalAvailable: 250 }),
+      makePlaylistInfo({ truncated: true, limit: 500, totalAvailable: 250 }),
       deps,
     );
 
     assert.strictEqual(result.truncated, true);
-    assert.strictEqual(result.limit, 100);
+    assert.strictEqual(result.limit, 500);
   });
 
   it('handles empty playlist gracefully', async () => {

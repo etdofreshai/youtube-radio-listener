@@ -288,7 +288,7 @@ export async function fetchYouTubePlaylistItems(
     throw new Error('yt-dlp is not available. Cannot fetch YouTube playlist.');
   }
 
-  const limit = Math.max(1, Math.min(500, options?.maxItems ?? 100));
+  const limit = Math.max(1, Math.min(500, options?.maxItems ?? 500));
 
   const { stdout } = await execFileAsync(ytDlpBin(), [
     '--dump-single-json',

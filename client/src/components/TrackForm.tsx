@@ -291,12 +291,12 @@ export default function TrackForm({ initial, onSubmit, onCancel, onPlaylistImpor
           <div style={{ marginTop: 4 }}>
             {urlKindInfo.kind === 'playlist' && (
               <p style={{ color: 'var(--primary, #4f8ef7)', fontSize: '0.82rem', margin: 0 }}>
-                📋 <strong>Playlist URL detected</strong> — all videos will be imported (up to 100 tracks).
+                📋 <strong>Playlist URL detected</strong> — all videos will be imported (up to 500 tracks).
               </p>
             )}
             {urlKindInfo.kind === 'video_with_playlist' && (
               <p style={{ color: 'var(--primary, #4f8ef7)', fontSize: '0.82rem', margin: 0 }}>
-                📋 <strong>Video + Playlist URL detected</strong> — the full playlist will be imported (up to 100 tracks).
+                📋 <strong>Video + Playlist URL detected</strong> — the full playlist will be imported (up to 500 tracks).
               </p>
             )}
             {urlKindInfo.kind === 'single_video' && !title.trim() && !artist.trim() && (
@@ -460,7 +460,7 @@ export default function TrackForm({ initial, onSubmit, onCancel, onPlaylistImpor
         }}>
           <strong style={{ color: 'var(--text)' }}>📋 Playlist import mode</strong>
           <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-            <li>All videos in the playlist will be added (up to 100 tracks per run).</li>
+            <li>All videos in the playlist will be added (up to 500 tracks per run).</li>
             <li>Tracks that already exist will be skipped automatically.</li>
             <li>Failures are reported without aborting the import.</li>
           </ul>
