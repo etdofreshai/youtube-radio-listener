@@ -12,19 +12,15 @@ interface ColumnDef {
   key: string;
   label: string;
   sortField?: SortableTrackField;
-  width?: string;
+  className?: string;
 }
 
 const COLUMNS: ColumnDef[] = [
-  { key: 'play', label: '', width: '40px' },
+  { key: 'play', label: '' },
   { key: 'title', label: 'Title', sortField: 'title' },
   { key: 'artist', label: 'Artist', sortField: 'artist' },
-  { key: 'album', label: 'Album', sortField: 'album' },
-  { key: 'duration', label: 'Duration', sortField: 'duration', width: '80px' },
-  { key: 'status', label: 'Status', width: '110px' },
-  { key: 'verified', label: '✓', sortField: 'verified', width: '50px' },
-  { key: 'dateAdded', label: 'Date Added', sortField: 'createdAt', width: '110px' },
-  { key: 'actions', label: 'Actions', width: '160px' },
+  { key: 'duration', label: '🕐', sortField: 'duration', className: 'col-duration' },
+  { key: 'actions', label: '', className: 'col-actions' },
 ];
 
 export default function TracksPage() {
@@ -36,7 +32,9 @@ export default function TracksPage() {
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [showYtSearch, setShowYtSearch] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Pagination + sort
   const [page, setPage] = useState(1);
@@ -78,6 +76,18 @@ export default function TracksPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [tracks, load]);
 
+  // Close action menu on outside click
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [openMenuId]);
+
   // Handlers
   const handleCreate = async (data: CreateTrackInput) => {
     await api.createTrack(data);
@@ -95,6 +105,7 @@ export default function TracksPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this track?')) return;
     await api.deleteTrack(id);
+    setOpenMenuId(null);
     load();
   };
 
@@ -103,16 +114,18 @@ export default function TracksPage() {
     else play(track);
   };
 
-  const handleRefresh = async (id: string) => { await api.refreshTrack(id); load(); };
-  const handleDownload = async (id: string) => { await api.downloadTrack(id); load(); };
+  const handleRefresh = async (id: string) => { await api.refreshTrack(id); setOpenMenuId(null); load(); };
+  const handleDownload = async (id: string) => { await api.downloadTrack(id); setOpenMenuId(null); load(); };
 
   const handleVerify = async (track: Track) => {
     await api.verifyTrack(track.id, !track.verified);
+    setOpenMenuId(null);
     load();
   };
 
   const handleEnrich = async (id: string) => {
     setEnrichingIds(prev => new Set(prev).add(id));
+    setOpenMenuId(null);
     try {
       await api.enrichTrack(id);
       load();
@@ -168,19 +181,19 @@ export default function TracksPage() {
     return <span className="sort-indicator active">{sortDir === 'asc' ? '↑' : '↓'}</span>;
   }
 
-  function AudioStatusBadge({ track }: { track: Track }) {
+  function StatusDot({ track }: { track: Track }) {
     switch (track.audioStatus) {
-      case 'ready': return <span className="badge badge-ready">● Ready</span>;
-      case 'downloading': return <span className="badge badge-downloading">⏳ Downloading…</span>;
-      case 'pending': return <span className="badge badge-pending">○ Pending</span>;
-      case 'error': return <span className="badge badge-error" title={track.audioError || 'Download failed'}>✕ Error</span>;
+      case 'ready': return <span className="status-dot status-ready" title="Audio ready">●</span>;
+      case 'downloading': return <span className="status-dot status-downloading" title="Downloading…">◉</span>;
+      case 'pending': return <span className="status-dot status-pending" title="Pending download">○</span>;
+      case 'error': return <span className="status-dot status-error" title={track.audioError || 'Download failed'}>✕</span>;
       default: return null;
     }
   }
 
   function EnrichmentBadge({ status, confidence }: { status: EnrichmentStatus; confidence: string | null }) {
     switch (status) {
-      case 'none': return <span className="badge badge-enrich-none" title="Not enriched">○</span>;
+      case 'none': return null; // Don't show anything for un-enriched — less noise
       case 'queued': return <span className="badge badge-enrich-queued" title="Queued for enrichment">⏳</span>;
       case 'stage_a': return <span className="badge badge-enrich-active" title="Stage A running">🔍A</span>;
       case 'stage_a_done':
@@ -204,6 +217,55 @@ export default function TracksPage() {
     );
   }
 
+  // ---------- Action Menu ----------
+  function ActionMenu({ track }: { track: Track }) {
+    const isOpen = openMenuId === track.id;
+    const isEnriching = enrichingIds.has(track.id) ||
+      track.enrichmentStatus === 'stage_a' || track.enrichmentStatus === 'stage_b' || track.enrichmentStatus === 'queued';
+
+    return (
+      <div className="action-menu-wrap" ref={isOpen ? menuRef : undefined}>
+        <button
+          className={`btn-icon action-menu-trigger ${isOpen ? 'active' : ''}`}
+          onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : track.id); }}
+          title="Actions"
+          aria-label="Track actions"
+        >
+          ⋯
+        </button>
+        {isOpen && (
+          <div className="action-menu-dropdown" onClick={e => e.stopPropagation()}>
+            <button className="action-menu-item" onClick={() => { setEditing(track); setShowForm(true); setOpenMenuId(null); }}>
+              <span className="action-menu-icon">✏️</span> Edit
+            </button>
+            <button className="action-menu-item" onClick={() => handleVerify(track)}>
+              <span className="action-menu-icon">{track.verified ? '☑️' : '☐'}</span>
+              {track.verified ? 'Unverify' : 'Verify'}
+            </button>
+            <button className="action-menu-item" onClick={() => handleEnrich(track.id)} disabled={isEnriching}>
+              <span className="action-menu-icon">🔍</span>
+              {isEnriching ? 'Enriching…' : 'Enrich'}
+            </button>
+            {track.audioStatus === 'ready' && (
+              <button className="action-menu-item" onClick={() => handleRefresh(track.id)}>
+                <span className="action-menu-icon">🔄</span> Re-download
+              </button>
+            )}
+            {(track.audioStatus === 'error' || track.audioStatus === 'pending') && (
+              <button className="action-menu-item" onClick={() => handleDownload(track.id)}>
+                <span className="action-menu-icon">⬇️</span> Download
+              </button>
+            )}
+            <div className="action-menu-divider" />
+            <button className="action-menu-item action-menu-danger" onClick={() => handleDelete(track.id)}>
+              <span className="action-menu-icon">🗑️</span> Delete
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ---------- Expandable Detail Panel ----------
   function TrackDetail({ track }: { track: Track }) {
     const isEnriching = enrichingIds.has(track.id) ||
@@ -221,10 +283,23 @@ export default function TracksPage() {
               <dt>Volume</dt>
               <dd>{track.volume}%{track.volume > 100 ? ' ⚡' : ''}</dd>
               {track.notes && <><dt>Notes</dt><dd>{track.notes}</dd></>}
-              <dt>Date/Time Added</dt>
+              <dt>Date Added</dt>
               <dd>{formatDateTime(track.createdAt)}</dd>
               <dt>Last Updated</dt>
               <dd>{formatDateTime(track.updatedAt)}</dd>
+              <dt>Audio Status</dt>
+              <dd>
+                {track.audioStatus === 'ready' && <span className="badge badge-ready">● Ready</span>}
+                {track.audioStatus === 'downloading' && <span className="badge badge-downloading">⏳ Downloading…</span>}
+                {track.audioStatus === 'pending' && <span className="badge badge-pending">○ Pending</span>}
+                {track.audioStatus === 'error' && <span className="badge badge-error" title={track.audioError || 'Download failed'}>✕ Error</span>}
+              </dd>
+              {track.verified && (
+                <>
+                  <dt>Verified</dt>
+                  <dd>✅ {track.verifiedBy ? `by ${track.verifiedBy}` : ''} {track.verifiedAt ? `on ${formatDateTime(track.verifiedAt)}` : ''}</dd>
+                </>
+              )}
             </dl>
 
             {/* Artwork */}
@@ -356,13 +431,6 @@ export default function TracksPage() {
             )}
           </div>
         </div>
-
-        {/* Verification */}
-        {track.verified && track.verifiedAt && (
-          <div className="track-detail-provenance" style={{ marginTop: 8 }}>
-            ✅ Verified {track.verifiedBy ? `by ${track.verifiedBy}` : ''} on {formatDateTime(track.verifiedAt)}
-          </div>
-        )}
       </div>
     );
   }
@@ -376,7 +444,7 @@ export default function TracksPage() {
     <>
       <div className="page-header">
         <h1>Tracks</h1>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <div className="tracks-toolbar">
           <form onSubmit={handleSearchSubmit} className="tracks-search">
             <input
               type="text"
@@ -391,13 +459,13 @@ export default function TracksPage() {
             )}
           </form>
           <button
-            className={`btn ${showYtSearch ? 'btn-secondary' : 'btn-primary'}`}
+            className={`btn btn-sm ${showYtSearch ? 'btn-secondary' : 'btn-primary'}`}
             onClick={() => setShowYtSearch(v => !v)}
           >
-            {showYtSearch ? '✕ Close Search' : '🔍 YouTube Search'}
+            {showYtSearch ? '✕ Close' : '🔍 YouTube'}
           </button>
-          <button className="btn btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>
-            + Add Track
+          <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(true); }}>
+            + Add
           </button>
         </div>
       </div>
@@ -419,7 +487,7 @@ export default function TracksPage() {
       ) : tracks.length === 0 && search ? (
         <div className="empty-state">
           <h3>No results</h3>
-          <p>No tracks match "{search}"</p>
+          <p>No tracks match &ldquo;{search}&rdquo;</p>
         </div>
       ) : (
         <>
@@ -428,9 +496,8 @@ export default function TracksPage() {
               {COLUMNS.map(col => (
                 <span
                   key={col.key}
-                  className={col.sortField ? 'sortable-header' : ''}
+                  className={`${col.sortField ? 'sortable-header' : ''} ${col.className || ''}`}
                   onClick={col.sortField ? () => handleSort(col.sortField!) : undefined}
-                  style={col.width ? { width: col.width } : undefined}
                 >
                   {col.label}
                   {col.sortField && <SortIndicator field={col.sortField} />}
@@ -447,7 +514,7 @@ export default function TracksPage() {
                 <div key={t.id}>
                   <div className={`track-row ${isCurrent ? 'track-active' : ''} ${isExpanded ? 'track-expanded' : ''}`}>
                     {/* Play */}
-                    <div>
+                    <div className="col-play">
                       {canPlay ? (
                         <button
                           className={`btn-play ${isCurrent && isPlaying ? 'playing' : ''}`}
@@ -463,19 +530,37 @@ export default function TracksPage() {
                       )}
                     </div>
 
-                    {/* Title (clickable to expand) */}
+                    {/* Title — includes album subtitle + inline badges */}
                     <div
                       className="track-title-cell"
                       onClick={() => setExpandedTrackId(isExpanded ? null : t.id)}
                       title="Click to expand details"
                     >
-                      <div className="track-title">
-                        {t.title}
-                        <EnrichmentBadge status={t.enrichmentStatus} confidence={t.metadataConfidence} />
+                      <div className="track-title-row">
+                        <span className="track-title">
+                          {t.title}
+                        </span>
+                        <span className="track-badges">
+                          <StatusDot track={t} />
+                          {t.verified && <span className="verified-tick" title="Verified">✓</span>}
+                          <EnrichmentBadge status={t.enrichmentStatus} confidence={t.metadataConfidence} />
+                        </span>
                       </div>
+                      {/* Album as subtitle */}
+                      {(t.albumName || t.album) && (
+                        <div className="track-subtitle">
+                          {t.albumName ? (
+                            <Link to={`/albums/${t.albumSlug || t.albumId}`} className="entity-link" onClick={e => e.stopPropagation()}>
+                              {t.albumName}
+                            </Link>
+                          ) : (
+                            <span className="track-album-text">{t.album}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Artist (clickable links) */}
+                    {/* Artist */}
                     <div className="track-artist">
                       {t.artists && t.artists.length > 0 ? (
                         t.artists.map((a, i) => (
@@ -493,49 +578,12 @@ export default function TracksPage() {
                       )}
                     </div>
 
-                    {/* Album (clickable link) */}
-                    <div className="track-meta">
-                      {t.albumName ? (
-                        <Link to={`/albums/${t.albumSlug || t.albumId}`} className="entity-link" onClick={e => e.stopPropagation()}>
-                          {t.albumName}
-                        </Link>
-                      ) : t.album ? (
-                        <span className="track-album-text">{t.album}</span>
-                      ) : '—'}
-                    </div>
-
                     {/* Duration */}
-                    <div className="track-meta">{formatDuration(t.duration)}</div>
+                    <div className="track-duration col-duration">{formatDuration(t.duration)}</div>
 
-                    {/* Status */}
-                    <div><AudioStatusBadge track={t} /></div>
-
-                    {/* Verified */}
-                    <div>
-                      <button
-                        className={`btn-verify ${t.verified ? 'verified' : ''}`}
-                        onClick={() => handleVerify(t)}
-                        title={t.verified ? 'Verified — click to unverify' : 'Click to verify'}
-                      >
-                        {t.verified ? '✅' : '○'}
-                      </button>
-                    </div>
-
-                    {/* Date Added */}
-                    <div className="track-meta" title={formatDateTime(t.createdAt)}>
-                      {formatDate(t.createdAt)}
-                    </div>
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {t.audioStatus === 'ready' && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => handleRefresh(t.id)} title="Re-download audio">🔄</button>
-                      )}
-                      {(t.audioStatus === 'error' || t.audioStatus === 'pending') && (
-                        <button className="btn btn-primary btn-sm" onClick={() => handleDownload(t.id)} title="Download audio">⬇️</button>
-                      )}
-                      <button className="btn btn-secondary btn-sm" onClick={() => { setEditing(t); setShowForm(true); }}>Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t.id)}>✕</button>
+                    {/* Actions — compact ⋯ menu */}
+                    <div className="col-actions">
+                      <ActionMenu track={t} />
                     </div>
                   </div>
 
@@ -548,18 +596,17 @@ export default function TracksPage() {
           {/* Pagination */}
           <div className="pagination">
             <div className="pagination-info">
-              Showing {startItem}–{endItem} of {total} tracks
+              {startItem}–{endItem} of {total}
             </div>
             <div className="pagination-controls">
               <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(1)} title="First page">««</button>
               <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} title="Previous page">«</button>
-              <span className="pagination-page">Page {page} of {totalPages}</span>
+              <span className="pagination-page">{page} / {totalPages}</span>
               <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} title="Next page">»</button>
               <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(totalPages)} title="Last page">»»</button>
             </div>
             <div className="pagination-size">
-              <label>Per page:</label>
-              <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}>
+              <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }} title="Items per page">
                 {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>

@@ -195,7 +195,11 @@ a:hover {
 
 .track-artist {
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .track-meta {
@@ -348,21 +352,30 @@ a:hover {
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Track row — updated grid with play, title, artist, duration, status, verified, date, actions */
+/* Track row — compact 5-column grid: play | title | artist | duration | actions */
 .track-row {
   display: grid;
-  grid-template-columns: 40px 1.5fr 1fr 80px 110px 50px 110px 160px;
+  grid-template-columns: 40px 1.5fr 1fr 64px 44px;
   align-items: center;
-  padding: 10px 16px;
+  padding: 8px 16px;
   border-radius: var(--radius);
   transition: background 0.15s;
-  gap: 12px;
+  gap: 8px 12px;
 }
 
 .track-header {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-primary);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
 
 .track-header span {
@@ -378,6 +391,237 @@ a:hover {
   background: var(--bg-tertiary);
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
+}
+
+/* ---------- Tracks toolbar ---------- */
+
+.tracks-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Column helpers */
+.col-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.col-duration {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.col-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- Row hover ---------- */
+
+.track-row:not(.track-header):hover {
+  background: var(--bg-hover);
+}
+
+/* ---------- Status dot (inline near title) ---------- */
+
+.status-dot {
+  font-size: 0.55rem;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.status-ready { color: var(--success); }
+.status-downloading { color: var(--accent); animation: pulse-badge 1.5s ease-in-out infinite; }
+.status-pending { color: var(--text-muted); }
+.status-error { color: var(--danger); cursor: help; }
+
+/* ---------- Title row with inline badges ---------- */
+
+.track-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.track-title-row .track-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.track-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.verified-tick {
+  color: var(--success);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.track-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* ---------- Action menu ---------- */
+
+.action-menu-wrap {
+  position: relative;
+}
+
+.action-menu-trigger {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-menu-trigger:hover,
+.action-menu-trigger.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.action-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 160px;
+  padding: 4px 0;
+  z-index: 50;
+  box-shadow: var(--shadow);
+  animation: menuFadeIn 0.12s ease;
+}
+
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.1s;
+  text-align: left;
+}
+
+.action-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.action-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.action-menu-item:disabled:hover {
+  background: none;
+}
+
+.action-menu-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.action-menu-danger {
+  color: var(--danger);
+}
+
+.action-menu-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.action-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ---------- Responsive track grid ---------- */
+
+@media (max-width: 680px) {
+  .track-row {
+    grid-template-columns: 36px 1fr 44px;
+    gap: 4px 8px;
+    padding: 8px 12px;
+  }
+
+  /* Hide artist and duration columns on mobile */
+  .track-artist,
+  .col-duration,
+  .track-header .col-duration,
+  .track-header span:nth-child(3),
+  .track-header span:nth-child(4) {
+    display: none;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .tracks-toolbar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+@media (min-width: 681px) and (max-width: 900px) {
+  .track-row {
+    grid-template-columns: 40px 1.5fr 1fr 44px;
+    gap: 6px 10px;
+  }
+
+  /* Hide duration on tablet */
+  .col-duration,
+  .track-header .col-duration {
+    display: none;
+  }
 }
 
 /* ---------- Sortable headers ---------- */
@@ -410,19 +654,11 @@ a:hover {
 .track-title-cell {
   cursor: pointer;
   overflow: hidden;
+  min-width: 0;
 }
 
 .track-title-cell:hover .track-title {
   color: var(--accent);
-}
-
-.track-album {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-style: italic;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---------- Verify button ---------- */
