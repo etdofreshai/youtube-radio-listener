@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import type { Track, CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection, EnrichmentStatus } from '../types';
+import type { Track, CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection, EnrichmentStatus, TrackVariant, VariantKind, CreateVariantInput } from '../types';
 import * as api from '../api';
 import TrackForm from '../components/TrackForm';
 import YouTubeSearch from '../components/YouTubeSearch';
 import { useAudioPlayer } from '../components/AudioPlayer';
 import { parseEndTime } from '../utils/endTimeParse';
+import { getEffectiveDuration, getEffectiveDurationFromStrings } from '../utils/effectiveDuration';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const PAGE_SIZE_KEY = 'nightwave:tracksPageSize';
@@ -308,6 +309,12 @@ export default function TracksPage() {
       if (parsed) endSec = parsed.value;
     }
 
+    // Validate: start must be < end when both present
+    if (startSec != null && endSec != null && startSec >= endSec) {
+      setEditStates(prev => ({ ...prev, [trackId]: { ...prev[trackId], error: 'Start time must be before end time' } }));
+      return;
+    }
+
     setEditStates(prev => ({ ...prev, [trackId]: { ...prev[trackId], saving: true, error: '' } }));
 
     try {
@@ -467,6 +474,157 @@ export default function TracksPage() {
   }
 
   // ---------- Expandable Detail Panel ----------
+  const VARIANT_KIND_LABELS: Record<string, string> = {
+    'original': '🎵 Original',
+    '4k': '📺 4K',
+    'official-video': '🎬 Official',
+    'audio-only': '🎧 Audio',
+    'live': '🎤 Live',
+    'remaster': '✨ Remaster',
+    'lyric-video': '📝 Lyrics',
+    'remix': '🔄 Remix',
+    'acoustic': '🪕 Acoustic',
+    'other': '📎 Other',
+  };
+
+  function TrackVariantsSection({ track, onUpdated }: { track: Track; onUpdated: () => void }) {
+    const [addingVariant, setAddingVariant] = useState(false);
+    const [newUrl, setNewUrl] = useState('');
+    const [newKind, setNewKind] = useState<VariantKind>('original');
+    const [newLabel, setNewLabel] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [varError, setVarError] = useState('');
+
+    const variants = track.variants || [];
+
+    const handleAddVariant = async () => {
+      if (!newUrl.trim()) return;
+      setSaving(true);
+      setVarError('');
+      try {
+        await api.addVariant(track.id, {
+          youtubeUrl: newUrl.trim(),
+          kind: newKind,
+          label: newLabel.trim() || undefined,
+        });
+        setNewUrl('');
+        setNewLabel('');
+        setNewKind('original');
+        setAddingVariant(false);
+        onUpdated();
+      } catch (err: unknown) {
+        setVarError(err instanceof Error ? err.message : 'Failed to add variant');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const handleSetPreferred = async (variantId: string) => {
+      try {
+        await api.setPreferredVariant(track.id, variantId);
+        onUpdated();
+      } catch (err) {
+        console.error('Failed to set preferred variant:', err);
+      }
+    };
+
+    const handleDeleteVariant = async (variantId: string) => {
+      if (!confirm('Remove this variant?')) return;
+      try {
+        await api.deleteVariant(track.id, variantId);
+        onUpdated();
+      } catch (err: unknown) {
+        alert(err instanceof Error ? err.message : 'Failed to delete variant');
+      }
+    };
+
+    return (
+      <div className="track-variants-section">
+        <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          🔗 Variants ({variants.length})
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setAddingVariant(!addingVariant)}
+          >
+            {addingVariant ? '✕ Cancel' : '+ Add Variant'}
+          </button>
+        </h4>
+
+        {addingVariant && (
+          <div className="variant-add-form">
+            <input
+              type="text"
+              value={newUrl}
+              onChange={e => setNewUrl(e.target.value)}
+              placeholder="YouTube URL…"
+              style={{ flex: 1 }}
+            />
+            <select value={newKind} onChange={e => setNewKind(e.target.value as VariantKind)}>
+              <option value="original">Original</option>
+              <option value="4k">4K</option>
+              <option value="official-video">Official Video</option>
+              <option value="audio-only">Audio Only</option>
+              <option value="live">Live</option>
+              <option value="remaster">Remaster</option>
+              <option value="lyric-video">Lyric Video</option>
+              <option value="remix">Remix</option>
+              <option value="acoustic">Acoustic</option>
+              <option value="other">Other</option>
+            </select>
+            <input
+              type="text"
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              placeholder="Label (optional)"
+              style={{ width: 150 }}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleAddVariant}
+              disabled={saving || !newUrl.trim()}
+            >
+              {saving ? '⏳' : 'Add'}
+            </button>
+            {varError && <span style={{ color: 'var(--danger)', fontSize: '0.8rem' }}>{varError}</span>}
+          </div>
+        )}
+
+        <div className="variants-list">
+          {variants.map(v => (
+            <div key={v.id} className={`variant-row ${v.isPreferred ? 'variant-preferred' : ''}`}>
+              <span className="variant-kind-badge">{VARIANT_KIND_LABELS[v.kind] || v.kind}</span>
+              {v.label && <span className="variant-label">{v.label}</span>}
+              <a href={v.youtubeUrl} target="_blank" rel="noopener" className="variant-url" title={v.youtubeUrl}>
+                {v.videoId}
+              </a>
+              {v.isPreferred ? (
+                <span className="variant-active-badge">★ Active</span>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => handleSetPreferred(v.id)}
+                    title="Set as preferred variant"
+                  >
+                    ▶ Use
+                  </button>
+                  <button
+                    className="btn-icon btn-sm"
+                    onClick={() => handleDeleteVariant(v.id)}
+                    title="Remove variant"
+                    style={{ color: 'var(--danger)' }}
+                  >
+                    🗑
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function TrackDetail({ track }: { track: Track }) {
     const isEnriching = enrichingIds.has(track.id) ||
       track.enrichmentStatus === 'stage_a' || track.enrichmentStatus === 'stage_b' || track.enrichmentStatus === 'queued';
@@ -648,6 +806,11 @@ export default function TracksPage() {
             )}
           </div>
         </div>
+
+        {/* Variants section */}
+        {track.variants && track.variants.length > 0 && (
+          <TrackVariantsSection track={track} onUpdated={load} />
+        )}
       </div>
     );
   }
@@ -747,9 +910,12 @@ export default function TracksPage() {
                   )}
                 </div>
 
-                {/* Duration */}
+                {/* Duration — show effective (trimmed) duration if start/end set */}
                 <div className="track-duration col-duration">
-                  {t.isLiveStream ? <span className="badge-live-sm" title="Live Stream">📡</span> : formatDuration(t.duration)}
+                  {t.isLiveStream ? <span className="badge-live-sm" title="Live Stream">📡</span> : (() => {
+                    const info = getEffectiveDuration(t.duration, t.startTimeSec, t.endTimeSec);
+                    return formatDuration(info.effective);
+                  })()}
                 </div>
 
                 {/* Actions — compact ⋯ menu */}
@@ -874,9 +1040,21 @@ export default function TracksPage() {
               />
             </div>
 
-            {/* Duration (read-only computed) */}
+            {/* Duration (read-only computed) — shows effective with trim indicator */}
             <div className="edit-cell edit-cell-time col-duration">
-              <span className="edit-duration-display">{formatDuration(t.duration)}</span>
+              {(() => {
+                const info = es.dirty
+                  ? getEffectiveDurationFromStrings(t.duration, es.startTime, es.endTime, parseEndTime)
+                  : getEffectiveDuration(t.duration, t.startTimeSec, t.endTimeSec);
+                if (info.isTrimmed) {
+                  return (
+                    <span className="edit-duration-display trimmed" title={`Original: ${formatDuration(info.original)} → Trimmed: ${formatDuration(info.effective)}`}>
+                      ✂️ {formatDuration(info.effective)}
+                    </span>
+                  );
+                }
+                return <span className="edit-duration-display">{formatDuration(info.effective)}</span>;
+              })()}
             </div>
 
             {/* Actions: save/cancel */}

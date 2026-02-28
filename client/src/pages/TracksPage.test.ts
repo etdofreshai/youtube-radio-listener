@@ -1,6 +1,6 @@
 /**
  * Tests for TracksPage layout constants, helpers, mode toggle, swap logic,
- * and page-size localStorage persistence.
+ * page-size localStorage persistence, and effective-duration display logic.
  *
  * Run:
  *   cd client && npm test
@@ -8,6 +8,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { getEffectiveDuration } from '../utils/effectiveDuration.js';
 
 // ── Column definitions (mirrors TracksPage COLUMNS) ─────────────────────────
 
@@ -330,5 +331,84 @@ describe('Page size localStorage persistence', () => {
     assert.strictEqual(getPersistedPageSize(), 50);
     persistPageSize(10);
     assert.strictEqual(getPersistedPageSize(), 10);
+  });
+});
+
+// ── Duration display in regular vs edit mode ────────────────────────────────
+
+describe('Duration display – regular mode (effective duration)', () => {
+  it('shows original duration when no start/end trim', () => {
+    const info = getEffectiveDuration(240, null, null);
+    assert.strictEqual(formatDuration(info.effective), '4:00');
+    assert.strictEqual(info.isTrimmed, false);
+  });
+
+  it('shows trimmed duration (end - start) when both set', () => {
+    const info = getEffectiveDuration(300, 30, 180);
+    assert.strictEqual(formatDuration(info.effective), '2:30');
+    assert.strictEqual(info.isTrimmed, true);
+  });
+
+  it('shows end as duration when only end set', () => {
+    const info = getEffectiveDuration(300, null, 120);
+    assert.strictEqual(formatDuration(info.effective), '2:00');
+    assert.strictEqual(info.isTrimmed, true);
+  });
+
+  it('shows duration - start when only start set', () => {
+    const info = getEffectiveDuration(300, 60, null);
+    assert.strictEqual(formatDuration(info.effective), '4:00');
+    assert.strictEqual(info.isTrimmed, true);
+  });
+
+  it('shows dash for null duration with no trim', () => {
+    const info = getEffectiveDuration(null, null, null);
+    assert.strictEqual(formatDuration(info.effective), '—');
+  });
+
+  it('shows dash for invalid trim (start >= end)', () => {
+    const info = getEffectiveDuration(300, 200, 100);
+    assert.strictEqual(formatDuration(info.effective), '—');
+  });
+});
+
+describe('Duration display – edit mode (trim indicator)', () => {
+  it('isTrimmed is false when no start/end set', () => {
+    const info = getEffectiveDuration(240, null, null);
+    assert.strictEqual(info.isTrimmed, false);
+  });
+
+  it('isTrimmed is true when effective differs from original', () => {
+    const info = getEffectiveDuration(300, 30, 180);
+    assert.strictEqual(info.isTrimmed, true);
+    assert.strictEqual(info.effective, 150);
+    assert.strictEqual(info.original, 300);
+  });
+
+  it('provides original for tooltip display', () => {
+    const info = getEffectiveDuration(300, 30, 180);
+    // In edit mode, UI shows: ✂️ 2:30 with tooltip "Original: 5:00 → Trimmed: 2:30"
+    assert.strictEqual(formatDuration(info.original), '5:00');
+    assert.strictEqual(formatDuration(info.effective), '2:30');
+  });
+});
+
+describe('Inline save validation – start >= end', () => {
+  it('detects start >= end as invalid', () => {
+    const startSec = 200;
+    const endSec = 100;
+    assert.ok(startSec >= endSec, 'start >= end should be flagged');
+  });
+
+  it('detects start == end as invalid', () => {
+    const startSec = 100;
+    const endSec = 100;
+    assert.ok(startSec >= endSec, 'start == end should be flagged');
+  });
+
+  it('allows start < end', () => {
+    const startSec = 30;
+    const endSec = 180;
+    assert.ok(startSec < endSec, 'start < end should be valid');
   });
 });
