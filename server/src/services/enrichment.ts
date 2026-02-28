@@ -21,7 +21,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import * as store from '../store/memory';
+import * as store from '../store';
 import type { Track, EnrichmentStatus, FieldConfidence } from '../types';
 import { ytDlpAvailable, ytDlpBin } from '../deps';
 
@@ -71,10 +71,6 @@ export interface EnrichmentProvider {
 // Stage A Providers
 // ============================================================
 
-/**
- * YouTube Provider — uses yt-dlp --dump-json.
- * Always available. Extracts everything YouTube knows about the video.
- */
 class YouTubeProvider implements EnrichmentProvider {
   name = 'youtube';
   stage: 'A' = 'A';
@@ -105,7 +101,6 @@ class YouTubeProvider implements EnrichmentProvider {
       result.ytViewCount = typeof info.view_count === 'number' ? info.view_count : null;
       result.ytLikeCount = typeof info.like_count === 'number' ? info.like_count : null;
 
-      // Upload date: yt-dlp returns YYYYMMDD
       if (info.upload_date && /^\d{8}$/.test(info.upload_date)) {
         const d = info.upload_date;
         result.ytUploadDate = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
@@ -116,7 +111,6 @@ class YouTubeProvider implements EnrichmentProvider {
         result.duration = Math.round(info.duration);
       }
 
-      // YouTube Music tracks sometimes carry structured metadata
       if (info.album) {
         result.album = info.album;
         annotations.push({ field: 'album', confidence: 'high' });
@@ -130,7 +124,6 @@ class YouTubeProvider implements EnrichmentProvider {
         annotations.push({ field: 'genre', confidence: 'medium' });
       }
 
-      // Use thumbnail as artwork if no better source
       if (info.thumbnail) {
         result.artworkUrl = info.thumbnail;
         result.artworkSource = 'youtube-thumbnail';
@@ -146,10 +139,6 @@ class YouTubeProvider implements EnrichmentProvider {
   }
 }
 
-/**
- * Title Parser Provider — rule-based extraction from video title/description.
- * Attempts to parse "Artist - Title (Album)" patterns, year from description, etc.
- */
 class TitleParserProvider implements EnrichmentProvider {
   name = 'title-parser';
   stage: 'A' = 'A';
@@ -162,15 +151,13 @@ class TitleParserProvider implements EnrichmentProvider {
     const result: EnrichmentResult = {};
     const annotations: EnrichmentResult['fieldAnnotations'] = [];
 
-    // Try to extract year from YouTube description or title
     const desc = track.ytDescription || '';
     const title = track.title || '';
 
-    // Year patterns: "Released: 2019", "(2019)", "℗ 2019"
     const yearPatterns = [
       /(?:released|©|℗|ⓒ)\s*(?:in\s+)?(\d{4})/i,
       /\((\d{4})\)/,
-      /\b((?:19|20)\d{2})\b/,  // last resort: any 4-digit year
+      /\b((?:19|20)\d{2})\b/,
     ];
 
     if (!track.releaseYear) {
@@ -187,7 +174,6 @@ class TitleParserProvider implements EnrichmentProvider {
       }
     }
 
-    // Try to extract album from description
     if (!track.album && desc) {
       const albumPatterns = [
         /(?:album|from)\s*[:\-–]\s*["""]?(.+?)["""]?\s*(?:\n|$)/i,
@@ -203,7 +189,6 @@ class TitleParserProvider implements EnrichmentProvider {
       }
     }
 
-    // Try to extract label from description
     if (!track.label && desc) {
       const labelPatterns = [
         /(?:℗|©|ⓒ)\s*\d{4}\s+(.+?)(?:\n|$)/i,
@@ -219,7 +204,6 @@ class TitleParserProvider implements EnrichmentProvider {
       }
     }
 
-    // Genre heuristics from description or channel name
     if (!track.genre && desc) {
       const genreKeywords = [
         'hip hop', 'hip-hop', 'rap', 'r&b', 'rock', 'pop', 'jazz', 'blues',
@@ -246,13 +230,6 @@ class TitleParserProvider implements EnrichmentProvider {
 // Stage B Providers (AI / external)
 // ============================================================
 
-/**
- * AI Research Provider — uses web search + LLM to fill missing metadata.
- * Budget-limited. Only runs when Stage A leaves gaps.
- *
- * Currently a structured stub that documents the integration points.
- * To activate: set OPENAI_API_KEY or equivalent env var.
- */
 class AIResearchProvider implements EnrichmentProvider {
   name = 'ai-research';
   stage: 'B' = 'B';
@@ -267,7 +244,6 @@ class AIResearchProvider implements EnrichmentProvider {
     const result: EnrichmentResult = {};
     const annotations: EnrichmentResult['fieldAnnotations'] = [];
 
-    // Build a research prompt from what we know
     const known: string[] = [];
     known.push(`Title: ${track.title}`);
     known.push(`Artist: ${track.artist}`);
@@ -283,7 +259,6 @@ class AIResearchProvider implements EnrichmentProvider {
     if (!track.isrc) missing.push('ISRC code');
 
     if (missing.length === 0) {
-      // Nothing to research
       return result;
     }
 
@@ -366,9 +341,6 @@ class AIResearchProvider implements EnrichmentProvider {
   }
 }
 
-/**
- * Stub: MusicBrainz Provider (future)
- */
 class MusicBrainzProvider implements EnrichmentProvider {
   name = 'musicbrainz';
   stage: 'B' = 'B';
@@ -419,8 +391,8 @@ export function listProviders(): Array<{
 // ============================================================
 
 class BudgetTracker {
-  private hourlySlots: number[] = [];   // timestamps of AI enriches this hour
-  private dailySlots: number[] = [];    // timestamps of AI enriches today
+  private hourlySlots: number[] = [];
+  private dailySlots: number[] = [];
   readonly maxPerHour: number;
   readonly maxPerDay: number;
 
@@ -474,7 +446,7 @@ interface QueueItem {
 
 class EnrichmentQueue {
   private queue: QueueItem[] = [];
-  private active = new Map<string, Promise<void>>();  // trackId -> running promise
+  private active = new Map<string, Promise<void>>();
   readonly maxConcurrency: number;
 
   constructor() {
@@ -491,24 +463,24 @@ class EnrichmentQueue {
     this.queue.push({ trackId, stage, addedAt: Date.now() });
 
     // Mark as queued in store
-    store.updateTrackMetadata(trackId, { enrichmentStatus: 'queued' });
+    store.updateTrackMetadata(trackId, { enrichmentStatus: 'queued' }).catch(() => {});
 
     this.drain();
     return true;
   }
 
   /** Force-enqueue for manual "Enrich now" — bypasses dedup */
-  forceEnqueue(trackId: string): boolean {
+  async forceEnqueue(trackId: string): Promise<boolean> {
     // Remove from queue if already there
     this.queue = this.queue.filter(q => q.trackId !== trackId);
     // Can't cancel active, but can re-queue for after
     if (this.active.has(trackId)) return false;
 
     // Determine stage
-    const track = store.getTrack(trackId);
+    const track = await store.getTrack(trackId);
     const stage = track?.stageACompletedAt ? 'B' : 'A';
     this.queue.unshift({ trackId, stage, addedAt: Date.now() });
-    store.updateTrackMetadata(trackId, { enrichmentStatus: 'queued' });
+    await store.updateTrackMetadata(trackId, { enrichmentStatus: 'queued' });
     this.drain();
     return true;
   }
@@ -521,18 +493,17 @@ class EnrichmentQueue {
       // For Stage B, check budget
       if (item.stage === 'B' && !budgetTracker.canDoAIEnrich()) {
         console.log(`[queue] Budget exhausted, deferring Stage B for ${item.trackId}`);
-        // Schedule retry — put back at end with backoff
-        const backoffMs = 15 * 60 * 1000; // 15 min
+        const backoffMs = 15 * 60 * 1000;
         store.updateTrackMetadata(item.trackId, {
           nextEnrichAt: new Date(Date.now() + backoffMs).toISOString(),
           enrichmentStatus: 'stage_a_done',
-        });
+        }).catch(() => {});
         continue;
       }
 
       const promise = this.processItem(item).finally(() => {
         this.active.delete(item.trackId);
-        this.drain(); // try to pick up next
+        this.drain();
       });
       this.active.set(item.trackId, promise);
     }
@@ -554,11 +525,9 @@ export const enrichmentQueue = new EnrichmentQueue();
 // ============================================================
 
 function calculateBackoff(attempts: number): number {
-  // Exponential backoff: 5min, 15min, 45min, 2h, 6h, 24h
-  const base = 5 * 60 * 1000; // 5 minutes
-  const maxBackoff = 24 * 60 * 60 * 1000; // 24 hours
+  const base = 5 * 60 * 1000;
+  const maxBackoff = 24 * 60 * 60 * 1000;
   const backoff = Math.min(base * Math.pow(3, attempts), maxBackoff);
-  // Add jitter: ±20%
   const jitter = backoff * (0.8 + Math.random() * 0.4);
   return Math.round(jitter);
 }
@@ -568,12 +537,12 @@ function calculateBackoff(attempts: number): number {
 // ============================================================
 
 async function runStageA(trackId: string): Promise<void> {
-  const track = store.getTrack(trackId);
+  const track = await store.getTrack(trackId);
   if (!track) return;
 
   console.log(`[enrichment] Stage A starting for ${trackId} ("${track.title}" by ${track.artist})`);
 
-  store.updateTrackMetadata(trackId, { enrichmentStatus: 'stage_a' });
+  await store.updateTrackMetadata(trackId, { enrichmentStatus: 'stage_a' });
 
   try {
     const stageAProviders = providers
@@ -587,9 +556,10 @@ async function runStageA(trackId: string): Promise<void> {
     for (const provider of stageAProviders) {
       try {
         console.log(`[enrichment]   Running ${provider.name}`);
-        const result = await provider.enrich(store.getTrack(trackId)!); // re-read for latest
+        const currentTrack = await store.getTrack(trackId);
+        if (!currentTrack) return;
+        const result = await provider.enrich(currentTrack);
 
-        // Merge: only fill null fields
         for (const [key, value] of Object.entries(result)) {
           if (key === 'fieldAnnotations') continue;
           if (value != null && (merged as any)[key] == null) {
@@ -607,7 +577,6 @@ async function runStageA(trackId: string): Promise<void> {
       }
     }
 
-    // Build field confidences
     const now = new Date().toISOString();
     const fieldConfidences: FieldConfidence[] = allAnnotations.map(a => ({
       field: a.field,
@@ -616,7 +585,6 @@ async function runStageA(trackId: string): Promise<void> {
       updatedAt: now,
     }));
 
-    // Calculate overall confidence
     const filledFields = Object.entries(merged)
       .filter(([k, v]) => v != null && k !== 'fieldAnnotations' && k !== 'duration')
       .length;
@@ -625,8 +593,7 @@ async function runStageA(trackId: string): Promise<void> {
     if (filledFields >= 8) overallConfidence = 'high';
     else if (filledFields >= 4) overallConfidence = 'medium';
 
-    // Merge existing field confidences with new ones
-    const existing = store.getTrack(trackId);
+    const existing = await store.getTrack(trackId);
     const existingConfidences = existing?.fieldConfidences ?? [];
     const mergedConfidences = [...existingConfidences];
     for (const fc of fieldConfidences) {
@@ -635,10 +602,9 @@ async function runStageA(trackId: string): Promise<void> {
       else mergedConfidences.push(fc);
     }
 
-    // Remove fieldAnnotations before spreading into store
     delete (merged as any).fieldAnnotations;
 
-    store.updateTrackMetadata(trackId, {
+    await store.updateTrackMetadata(trackId, {
       ...merged,
       metadataSource: usedProviders || null,
       metadataConfidence: overallConfidence,
@@ -652,7 +618,13 @@ async function runStageA(trackId: string): Promise<void> {
 
     console.log(`[enrichment] ✅ Stage A complete for ${trackId}: ${filledFields} fields, confidence=${overallConfidence}`);
 
-    // Auto-promote to Stage B if confidence is low and AI is available
+    // Record event
+    store.recordEvent('track.enrichment_stage_a_completed', {
+      entityType: 'track',
+      entityId: trackId,
+      metadata: { confidence: overallConfidence, fieldsFound: filledFields, providers: usedProviders },
+    }).catch(() => {});
+
     if (overallConfidence !== 'high' && hasAvailableStageBProviders() && budgetTracker.canDoAIEnrich()) {
       console.log(`[enrichment]   → Auto-promoting to Stage B (confidence=${overallConfidence})`);
       enrichmentQueue.enqueue(trackId, 'B');
@@ -664,11 +636,11 @@ async function runStageA(trackId: string): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[enrichment] ❌ Stage A failed for ${trackId}:`, msg);
 
-    const existing = store.getTrack(trackId);
+    const existing = await store.getTrack(trackId);
     const attempts = (existing?.enrichmentAttempts ?? 0) + 1;
     const backoffMs = calculateBackoff(attempts);
 
-    store.updateTrackMetadata(trackId, {
+    await store.updateTrackMetadata(trackId, {
       enrichmentStatus: 'error',
       enrichmentError: msg.slice(0, 500),
       enrichmentAttempts: attempts,
@@ -684,12 +656,12 @@ async function runStageA(trackId: string): Promise<void> {
 // ============================================================
 
 async function runStageB(trackId: string): Promise<void> {
-  const track = store.getTrack(trackId);
+  const track = await store.getTrack(trackId);
   if (!track) return;
 
   console.log(`[enrichment] Stage B starting for ${trackId} ("${track.title}" by ${track.artist})`);
 
-  store.updateTrackMetadata(trackId, { enrichmentStatus: 'stage_b' });
+  await store.updateTrackMetadata(trackId, { enrichmentStatus: 'stage_b' });
 
   try {
     const stageBProviders = providers
@@ -698,7 +670,7 @@ async function runStageB(trackId: string): Promise<void> {
 
     if (stageBProviders.length === 0) {
       console.log(`[enrichment]   No Stage B providers available, marking complete`);
-      store.updateTrackMetadata(trackId, { enrichmentStatus: 'complete' });
+      await store.updateTrackMetadata(trackId, { enrichmentStatus: 'complete' });
       return;
     }
 
@@ -709,7 +681,9 @@ async function runStageB(trackId: string): Promise<void> {
     for (const provider of stageBProviders) {
       try {
         console.log(`[enrichment]   Running ${provider.name}`);
-        const result = await provider.enrich(store.getTrack(trackId)!);
+        const currentTrack = await store.getTrack(trackId);
+        if (!currentTrack) return;
+        const result = await provider.enrich(currentTrack);
 
         for (const [key, value] of Object.entries(result)) {
           if (key === 'fieldAnnotations') continue;
@@ -729,9 +703,8 @@ async function runStageB(trackId: string): Promise<void> {
     }
 
     const now = new Date().toISOString();
-    const existing = store.getTrack(trackId);
+    const existing = await store.getTrack(trackId);
 
-    // Build field confidences
     const newFieldConfidences: FieldConfidence[] = allAnnotations.map(a => ({
       field: a.field,
       confidence: a.confidence,
@@ -746,7 +719,6 @@ async function runStageB(trackId: string): Promise<void> {
       else mergedConfidences.push(fc);
     }
 
-    // Recalculate overall confidence including Stage A data
     const updatedTrack = { ...existing!, ...merged };
     const metaFields = ['ytChannel', 'ytUploadDate', 'album', 'releaseYear', 'genre', 'label', 'isrc', 'artworkUrl', 'alternateLinks'] as const;
     const filledCount = metaFields.filter(f => (updatedTrack as any)[f] != null).length;
@@ -757,7 +729,7 @@ async function runStageB(trackId: string): Promise<void> {
 
     delete (merged as any).fieldAnnotations;
 
-    store.updateTrackMetadata(trackId, {
+    await store.updateTrackMetadata(trackId, {
       ...merged,
       metadataSource: usedProviders,
       metadataConfidence: overallConfidence,
@@ -770,17 +742,24 @@ async function runStageB(trackId: string): Promise<void> {
     });
 
     console.log(`[enrichment] ✅ Stage B complete for ${trackId}: confidence=${overallConfidence}`);
+
+    store.recordEvent('track.enrichment_stage_b_completed', {
+      entityType: 'track',
+      entityId: trackId,
+      metadata: { confidence: overallConfidence, providers: usedProviders },
+    }).catch(() => {});
+
     enrichmentStats.stageBCompleted++;
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[enrichment] ❌ Stage B failed for ${trackId}:`, msg);
 
-    const existing = store.getTrack(trackId);
+    const existing = await store.getTrack(trackId);
     const attempts = (existing?.enrichmentAttempts ?? 0) + 1;
     const backoffMs = calculateBackoff(attempts);
 
-    store.updateTrackMetadata(trackId, {
+    await store.updateTrackMetadata(trackId, {
       enrichmentStatus: 'error',
       enrichmentError: msg.slice(0, 500),
       enrichmentAttempts: attempts,
@@ -799,52 +778,37 @@ function hasAvailableStageBProviders(): boolean {
 // Public API
 // ============================================================
 
-/** Stats for scheduler status endpoint */
 export const enrichmentStats = {
   stageACompleted: 0,
   stageBCompleted: 0,
   errors: 0,
 };
 
-/**
- * Enrich a single track (manual trigger).
- * Queues Stage A if never enriched, or Stage B if Stage A is done.
- * Returns the track immediately (enrichment runs async).
- */
-export function enrichTrack(trackId: string): Track | null {
-  const track = store.getTrack(trackId);
-  if (!track) return null;
-
-  enrichmentQueue.forceEnqueue(trackId);
-  return store.getTrack(trackId) ?? null;
+export function enrichTrack(trackId: string): void {
+  // Fire and forget — async forceEnqueue
+  enrichmentQueue.forceEnqueue(trackId).catch(err => {
+    console.error(`[enrichment] Failed to enqueue ${trackId}:`, err);
+  });
 }
 
-/**
- * Synchronous enrichment — waits for completion.
- * Used by the POST /tracks/:id/enrich endpoint.
- */
 export async function enrichTrackSync(trackId: string): Promise<Track | null> {
-  const track = store.getTrack(trackId);
+  const track = await store.getTrack(trackId);
   if (!track) return null;
 
   if (!track.stageACompletedAt) {
     await runStageA(trackId);
   }
 
-  // Check if Stage B should run
-  const updated = store.getTrack(trackId);
+  const updated = await store.getTrack(trackId);
   if (updated && updated.metadataConfidence !== 'high' && hasAvailableStageBProviders() && budgetTracker.canDoAIEnrich()) {
     await runStageB(trackId);
   }
 
-  return store.getTrack(trackId) ?? null;
+  return (await store.getTrack(trackId)) ?? null;
 }
 
-/**
- * Batch enrich all tracks (manual trigger).
- */
 export async function enrichAllTracks(options?: { force?: boolean }): Promise<number> {
-  const allTracks = store.getAllTracks();
+  const allTracks = await store.getAllTracks();
   let queued = 0;
 
   for (const track of allTracks) {

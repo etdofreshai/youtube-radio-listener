@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
-import * as store from './store/memory';
+import * as store from './store';
 import { ytDlpAvailable, ytDlpBin, ffprobeBin } from './deps';
 
 const execFileAsync = promisify(execFile);
@@ -23,13 +23,13 @@ const activeDownloads = new Set<string>();
  * Runs in background (fire-and-forget from route handler).
  */
 export async function downloadTrackAudio(trackId: string): Promise<void> {
-  const track = store.getTrack(trackId);
+  const track = await store.getTrack(trackId);
   if (!track) throw new Error('Track not found');
 
   if (!ytDlpAvailable()) {
     const msg = 'yt-dlp binary not found. Install yt-dlp (pip install yt-dlp) or set YT_DLP_PATH env var.';
     console.error(`[downloader] ❌ ${msg}`);
-    store.updateTrackAudio(trackId, { audioStatus: 'error', audioError: msg });
+    await store.updateTrackAudio(trackId, { audioStatus: 'error', audioError: msg });
     return;
   }
 
@@ -41,7 +41,7 @@ export async function downloadTrackAudio(trackId: string): Promise<void> {
   activeDownloads.add(trackId);
 
   // Mark as downloading
-  store.updateTrackAudio(trackId, {
+  await store.updateTrackAudio(trackId, {
     audioStatus: 'downloading',
     audioError: null,
   });
@@ -123,20 +123,28 @@ export async function downloadTrackAudio(trackId: string): Promise<void> {
 
     console.log(`[downloader] ✅ Downloaded ${trackId}: ${filename} (${duration}s)`);
 
-    store.updateTrackAudio(trackId, {
+    await store.updateTrackAudio(trackId, {
       audioStatus: 'ready',
       audioFilename: filename,
       duration,
       lastDownloadAt: new Date().toISOString(),
       audioError: null,
     });
+
+    // Record event
+    store.recordEvent('track.download_completed', {
+      entityType: 'track',
+      entityId: trackId,
+      metadata: { filename, duration },
+    }).catch(() => {});
+
   } catch (err: unknown) {
     let message = err instanceof Error ? err.message : String(err);
     if (message.includes('ENOENT')) {
       message = `yt-dlp binary not found at "${ytDlpBin()}". Install it or set YT_DLP_PATH.`;
     }
     console.error(`[downloader] ❌ Failed ${trackId}:`, message);
-    store.updateTrackAudio(trackId, {
+    await store.updateTrackAudio(trackId, {
       audioStatus: 'error',
       audioError: message.slice(0, 500),
     });
@@ -149,7 +157,7 @@ export async function downloadTrackAudio(trackId: string): Promise<void> {
  * Re-download: remove existing file first, then download fresh.
  */
 export async function refreshTrackAudio(trackId: string): Promise<void> {
-  const track = store.getTrack(trackId);
+  const track = await store.getTrack(trackId);
   if (!track) throw new Error('Track not found');
 
   // Remove existing audio file if any
@@ -173,7 +181,7 @@ export async function refreshTrackAudio(trackId: string): Promise<void> {
   }
 
   // Reset audio fields
-  store.updateTrackAudio(trackId, {
+  await store.updateTrackAudio(trackId, {
     audioStatus: 'pending',
     audioFilename: null,
     audioError: null,
@@ -203,8 +211,8 @@ export function deleteTrackAudio(trackId: string): void {
 /**
  * Get the full file path for a track's audio, with validation.
  */
-export function getAudioFilePath(trackId: string): string | null {
-  const track = store.getTrack(trackId);
+export async function getAudioFilePath(trackId: string): Promise<string | null> {
+  const track = await store.getTrack(trackId);
   if (!track || !track.audioFilename) return null;
 
   // Validate filename doesn't escape audio dir

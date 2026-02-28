@@ -6,7 +6,7 @@ Dark, Spotify-inspired web app for managing YouTube music tracks, playlists, and
 
 - **Frontend:** Vite + React + TypeScript (dark theme)
 - **Backend:** Express + TypeScript
-- **Database:** PostgreSQL-ready (in-memory fallback for dev)
+- **Database:** PostgreSQL (with in-memory fallback for dev)
 - **Deploy:** Docker / Dokploy
 
 ## Quick Start
@@ -46,9 +46,13 @@ cd youtube-radio-listener
 
 # Copy environment config
 cp .env.example .env
+# Edit .env — set DATABASE_URL for persistence
 
 # Install all dependencies
 npm run install:all
+
+# Apply database migrations (if using PostgreSQL)
+psql $DATABASE_URL -f server/src/db/migrate-v4-persistence.sql
 
 # Start development (both client + server)
 npm run dev
@@ -57,6 +61,23 @@ npm run dev
 - **Frontend:** http://localhost:5173 (Vite dev server, proxies `/api` to backend)
 - **Backend:** http://localhost:3001
 - **Health check:** http://localhost:3001/api/health
+
+### Database Setup
+
+The v4 migration creates all tables (idempotent, safe to re-run):
+
+```bash
+# Apply the unified migration
+psql $DATABASE_URL -f server/src/db/migrate-v4-persistence.sql
+```
+
+This creates:
+- `users` — user accounts (seeded with a default 'local' user)
+- `tracks` — all track data including audio/enrichment/verification fields
+- `playlists` — playlist metadata
+- `playlist_tracks` — ordered track associations with position, addedAt, addedBy
+- `favorites` — favorited tracks
+- `events` — append-only audit log of all app activity
 
 ### Build for Production
 
@@ -74,11 +95,53 @@ npm start
 | `PORT` | `3001` | Server port |
 | `NODE_ENV` | `development` | Environment |
 | `VITE_API_URL` | _(empty)_ | API base URL for frontend (blank = same origin) |
-| `YOUTUBE_API_KEY` | _(empty)_ | YouTube Data API key (future) |
-| `AUTH_SECRET` | _(empty)_ | JWT/session secret (future) |
 | `YT_DLP_PATH` | `yt-dlp` | Path to yt-dlp binary |
 | `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg binary |
 | `FFPROBE_PATH` | `ffprobe` | Path to ffprobe binary |
+| `ENRICH_INTERVAL_MS` | `180000` | Background scheduler interval (ms) |
+| `ENRICH_BATCH_SIZE` | `2` | Tracks per scheduler tick |
+| `ENRICH_MAX_CONCURRENCY` | `2` | Max concurrent enrichment jobs |
+| `ENRICH_MAX_AI_PER_HOUR` | `10` | AI enrichment budget per hour |
+| `ENRICH_MAX_AI_PER_DAY` | `50` | AI enrichment budget per day |
+| `ENRICH_SCHEDULER_DISABLED` | `false` | Disable background enrichment |
+| `OPENAI_API_KEY` | _(empty)_ | Required for Stage B AI enrichment |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Model for AI research |
+
+## Persistence & Event History
+
+### Architecture
+
+When `DATABASE_URL` is set, all data is persisted to PostgreSQL:
+- **Tracks, playlists, favorites** — fully persisted, survive restarts
+- **Audio/enrichment state** — persisted including status, errors, attempts
+- **Event audit log** — every significant action recorded
+
+The app uses a **store abstraction layer** (`server/src/store/index.ts`) that routes to either the in-memory or PostgreSQL backend based on `DATABASE_URL`.
+
+### Event Types
+
+All user actions are recorded in the `events` table:
+
+| Event Type | Description |
+|---|---|
+| `track.created` | New track added |
+| `track.updated` | Track metadata edited |
+| `track.deleted` | Track removed |
+| `track.played` | Audio streamed |
+| `track.verified` / `track.unverified` | Verification toggled |
+| `track.download_started` / `track.download_completed` | Audio download |
+| `track.refresh_started` | Audio re-downloaded |
+| `track.enrich_started` | Manual enrichment triggered |
+| `track.enrichment_stage_a_completed` | Stage A enrichment done |
+| `track.enrichment_stage_b_completed` | Stage B AI enrichment done |
+| `playlist.created` / `playlist.updated` / `playlist.deleted` | Playlist CRUD |
+| `playlist.track_added` / `playlist.track_removed` | Playlist tracks changed |
+| `playlist.reordered` | Playlist track order changed |
+| `favorite.added` / `favorite.removed` | Favorites changed |
+
+### User Model
+
+A default "local" user (`00000000-0000-0000-0000-000000000001`) is seeded for pre-auth usage. The `users` table schema is ready for full auth integration. Currently, the user ID can be set via the `X-User-Id` request header.
 
 ## Project Structure
 
@@ -86,7 +149,7 @@ npm start
 ├── client/               # Vite + React frontend
 │   ├── src/
 │   │   ├── components/   # Reusable UI components
-│   │   ├── pages/        # Route pages
+│   │   ├── pages/        # Route pages (Tracks, Playlists, Favorites, History)
 │   │   ├── styles/       # Global CSS
 │   │   ├── api.ts        # API client
 │   │   └── types.ts      # TypeScript types
@@ -94,8 +157,14 @@ npm start
 ├── server/               # Express backend
 │   ├── src/
 │   │   ├── routes/       # API route handlers
-│   │   ├── store/        # In-memory data store
+│   │   ├── store/        # Store abstraction (memory + postgres)
+│   │   │   ├── index.ts  # Store router (picks backend based on DATABASE_URL)
+│   │   │   ├── memory.ts # In-memory store
+│   │   │   └── postgres.ts # PostgreSQL store
 │   │   ├── db/           # SQL schema + migrations
+│   │   │   ├── pool.ts   # Connection pool
+│   │   │   └── migrate-v4-persistence.sql  # Unified migration
+│   │   ├── services/     # Enrichment pipeline + scheduler
 │   │   └── types.ts      # Shared types
 │   └── tsconfig.json
 ├── Dockerfile            # Multi-stage production build
@@ -107,58 +176,37 @@ npm start
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/health` | Health check |
-| GET | `/api/tracks` | List all tracks |
+| GET | `/api/health` | Health check (includes DB status) |
+| GET | `/api/tracks` | List tracks (paginated, sortable, searchable) |
 | POST | `/api/tracks` | Create track |
 | GET | `/api/tracks/:id` | Get track |
 | PUT | `/api/tracks/:id` | Update track |
 | DELETE | `/api/tracks/:id` | Delete track |
+| POST | `/api/tracks/:id/verify` | Toggle verification |
+| POST | `/api/tracks/:id/enrich` | Trigger enrichment |
+| POST | `/api/tracks/:id/download` | Download audio |
+| POST | `/api/tracks/:id/refresh` | Re-download audio |
 | GET | `/api/playlists` | List playlists |
 | POST | `/api/playlists` | Create playlist |
 | GET | `/api/playlists/:id` | Get playlist |
 | PUT | `/api/playlists/:id` | Update playlist |
 | DELETE | `/api/playlists/:id` | Delete playlist |
+| POST | `/api/playlists/:id/tracks` | Add track to playlist |
+| DELETE | `/api/playlists/:id/tracks/:trackId` | Remove track from playlist |
+| PUT | `/api/playlists/:id/reorder` | Reorder playlist tracks |
 | GET | `/api/favorites` | List favorites (with track data) |
 | POST | `/api/favorites` | Add favorite `{ trackId }` |
 | DELETE | `/api/favorites/:trackId` | Remove favorite |
-
-## Track Fields
-
-| Field | Type | Description |
-|---|---|---|
-| `youtubeUrl` | string | YouTube video URL |
-| `title` | string | Track title |
-| `artist` | string | Artist name |
-| `startTimeSec` | number \| null | Playback start position (seconds) |
-| `endTimeSec` | number \| null | Playback end position (seconds) |
-| `volume` | number (0-100) | Preferred playback volume |
-| `notes` | string | Freeform notes |
-
-## Database
-
-Currently uses in-memory storage. PostgreSQL schema is available at `server/src/db/schema.sql`.
-
-```bash
-# Apply schema to Postgres
-psql $DATABASE_URL -f server/src/db/schema.sql
-```
+| GET | `/api/events` | Event history (paginated, filterable) |
+| GET | `/api/events/my` | Current user's event history |
+| GET | `/api/audio/:trackId` | Stream track audio |
 
 ## Dokploy Deployment
 
 1. Connect your GitHub repo in Dokploy
 2. Set build type to **Dockerfile**
-3. Add environment variables (at minimum `PORT=3001`)
-4. Set `DATABASE_URL` if using external PostgreSQL
-5. Deploy — the Dockerfile handles building client + server
-
-## What's Next (Phase 2)
-
-- [ ] PostgreSQL integration (connect in-memory store to real DB)
-- [ ] User authentication (JWT)
-- [ ] YouTube embed player
-- [ ] Search via YouTube Data API
-- [ ] Import/export JSON/CSV
-- [ ] Drag-and-drop playlist reordering
+3. Add environment variables (at minimum `PORT=3001` and `DATABASE_URL`)
+4. Deploy — the Dockerfile handles building client + server
 
 ## License
 

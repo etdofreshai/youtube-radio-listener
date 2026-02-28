@@ -7,6 +7,7 @@ import tracksRouter from './routes/tracks';
 import playlistsRouter from './routes/playlists';
 import favoritesRouter from './routes/favorites';
 import audioRouter from './routes/audio';
+import eventsRouter from './routes/events';
 import { startScheduler } from './services/scheduler';
 import { logStartupDiagnostics } from './deps';
 
@@ -23,6 +24,7 @@ app.use('/api/tracks', tracksRouter);
 app.use('/api/playlists', playlistsRouter);
 app.use('/api/favorites', favoritesRouter);
 app.use('/api/audio', audioRouter);
+app.use('/api/events', eventsRouter);
 
 // Serve static frontend in production
 const clientDist = path.join(__dirname, '../../client/dist');
@@ -31,21 +33,47 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(clientDist, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`🌊 Nightwave server running on http://localhost:${PORT}`);
-  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   Database: ${process.env.DATABASE_URL ? 'PostgreSQL' : 'In-memory'}`);
-
-  // Check external dependencies (yt-dlp, ffmpeg)
-  await logStartupDiagnostics();
-
-  // Start background enrichment scheduler
-  const disableScheduler = process.env.ENRICH_SCHEDULER_DISABLED === 'true';
-  if (!disableScheduler) {
-    startScheduler();
+async function start() {
+  // Database connectivity check
+  if (process.env.DATABASE_URL) {
+    try {
+      const { checkConnection } = await import('./db/pool');
+      const ok = await checkConnection();
+      if (ok) {
+        console.log('   ✅ Database: PostgreSQL connected');
+      } else {
+        console.error('   ❌ Database: connection failed — falling back to in-memory would require restart without DATABASE_URL');
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error('   ❌ Database: connection error:', err);
+      process.exit(1);
+    }
   } else {
-    console.log('   Enrichment scheduler: disabled');
+    console.log('   ⚠️  Database: In-memory (set DATABASE_URL for persistence)');
   }
+
+  app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`🌊 Nightwave server running on http://localhost:${PORT}`);
+    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`   Store: ${process.env.DATABASE_URL ? 'PostgreSQL' : 'In-memory'}`);
+
+    // Check external dependencies (yt-dlp, ffmpeg)
+    await logStartupDiagnostics();
+
+    // Start background enrichment scheduler
+    const disableScheduler = process.env.ENRICH_SCHEDULER_DISABLED === 'true';
+    if (!disableScheduler) {
+      startScheduler();
+    } else {
+      console.log('   Enrichment scheduler: disabled');
+    }
+  });
+}
+
+start().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
 
 export default app;

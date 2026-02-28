@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'path';
 import { getAudioFilePath } from '../downloader';
+import * as store from '../store';
 
 const router = Router();
 
@@ -15,14 +16,22 @@ const MIME_MAP: Record<string, string> = {
 };
 
 // GET /api/audio/:trackId — stream audio file for a track
-router.get('/:trackId', (req, res) => {
+router.get('/:trackId', async (req, res) => {
   const trackId = Array.isArray(req.params.trackId) ? req.params.trackId[0] : req.params.trackId;
 
-  const filePath = getAudioFilePath(trackId);
+  const filePath = await getAudioFilePath(trackId);
   if (!filePath) {
     res.status(404).json({ error: 'Audio not available' });
     return;
   }
+
+  // Record playback event
+  const userId = req.headers['x-user-id'] as string || '00000000-0000-0000-0000-000000000001';
+  store.recordEvent('track.played', {
+    userId,
+    entityType: 'track',
+    entityId: trackId,
+  }).catch(() => {});
 
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME_MAP[ext] || 'application/octet-stream';

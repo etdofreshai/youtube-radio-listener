@@ -159,3 +159,23 @@ export interface CreatePlaylistInput {
   description?: string;
   trackIds?: string[];
 }
+
+// ---------- Events / History ----------
+
+export interface AppEvent {
+  id: string;
+  userId: string | null;
+  eventType: string;
+  entityType: string | null;
+  entityId: string | null;
+  metadata: Record<string, any>;
+  createdAt: string;
+}
+
+export interface PaginatedEvents {
+  data: AppEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}

@@ -1,6 +1,7 @@
 import type {
   Track, Playlist, Favorite, CreateTrackInput, UpdateTrackInput, CreatePlaylistInput,
   PaginatedResponse, SortableTrackField, SortDirection, SchedulerStatus,
+  PaginatedEvents,
 } from './types';
 
 const BASE = import.meta.env.VITE_API_URL || '';
@@ -123,3 +124,35 @@ export const addFavorite = (trackId: string) =>
 
 export const removeFavorite = (trackId: string) =>
   request<void>(`/api/favorites/${trackId}`, { method: 'DELETE' });
+
+// ---------- Events / History ----------
+
+export interface GetEventsParams {
+  page?: number;
+  pageSize?: number;
+  eventType?: string;
+  entityType?: string;
+  entityId?: string;
+  mine?: boolean;
+}
+
+export const getEvents = (params?: GetEventsParams) => {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.pageSize) query.set('pageSize', String(params.pageSize));
+  if (params?.eventType) query.set('eventType', params.eventType);
+  if (params?.entityType) query.set('entityType', params.entityType);
+  if (params?.entityId) query.set('entityId', params.entityId);
+  if (params?.mine) query.set('mine', 'true');
+  const qs = query.toString();
+  return request<PaginatedEvents>(`/api/events${qs ? '?' + qs : ''}`);
+};
+
+export const getMyEvents = (params?: { page?: number; pageSize?: number; eventType?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.pageSize) query.set('pageSize', String(params.pageSize));
+  if (params?.eventType) query.set('eventType', params.eventType);
+  const qs = query.toString();
+  return request<PaginatedEvents>(`/api/events/my${qs ? '?' + qs : ''}`);
+};

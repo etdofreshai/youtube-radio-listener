@@ -6,14 +6,9 @@
  *   1. Finds 1-2 tracks that need enrichment (prioritized).
  *   2. Queues them into the enrichment queue.
  *   3. Respects backoff cooldowns and budget limits.
- *
- * Design:
- *   - Lightweight: just a setInterval that calls into the enrichment queue.
- *   - Idempotent: the queue deduplicates, so overlapping ticks are safe.
- *   - Graceful: can be started/stopped at runtime.
  */
 
-import * as store from '../store/memory';
+import * as store from '../store';
 import { enrichmentQueue, budgetTracker, enrichmentStats } from './enrichment';
 import type { SchedulerStatus } from '../types';
 
@@ -37,29 +32,26 @@ let running = false;
 // Tick Logic
 // ============================================================
 
-function tick(): void {
+async function tick(): Promise<void> {
   const now = Date.now();
   lastTickAt = new Date(now).toISOString();
   nextTickAt = new Date(now + TICK_INTERVAL_MS).toISOString();
 
   try {
-    // Find tracks that need enrichment
-    const candidates = store.getTracksNeedingEnrichment(BATCH_SIZE, now);
+    const candidates = await store.getTracksNeedingEnrichment(BATCH_SIZE, now);
 
     if (candidates.length === 0) {
-      return; // Nothing to do — quiet tick
+      return;
     }
 
     console.log(`[scheduler] Tick: found ${candidates.length} track(s) to enrich`);
 
     for (const track of candidates) {
-      // Determine which stage to run
       let stage: 'A' | 'B';
 
       if (track.enrichmentStatus === 'none' || !track.stageACompletedAt) {
         stage = 'A';
       } else if (track.enrichmentStatus === 'stage_a_done' && track.metadataConfidence !== 'high') {
-        // Stage A done but incomplete — try Stage B
         if (budgetTracker.canDoAIEnrich()) {
           stage = 'B';
         } else {
@@ -67,10 +59,8 @@ function tick(): void {
           continue;
         }
       } else if (track.enrichmentStatus === 'error') {
-        // Retry: start from whichever stage hasn't completed
         stage = track.stageACompletedAt ? 'B' : 'A';
       } else if (track.enrichmentStatus === 'complete' && track.metadataConfidence !== 'high') {
-        // Re-enrich: start from A to refresh YouTube data
         stage = 'A';
       } else {
         continue;
@@ -90,7 +80,6 @@ function tick(): void {
 // Public API
 // ============================================================
 
-/** Start the background scheduler */
 export function startScheduler(): void {
   if (running) {
     console.log('[scheduler] Already running');
@@ -100,17 +89,15 @@ export function startScheduler(): void {
   running = true;
   nextTickAt = new Date(Date.now() + TICK_INTERVAL_MS).toISOString();
 
-  // Run first tick after a short delay (let server finish starting)
   setTimeout(() => {
     if (!running) return;
     tick();
-    timer = setInterval(tick, TICK_INTERVAL_MS);
+    timer = setInterval(() => tick(), TICK_INTERVAL_MS);
   }, 5_000);
 
   console.log(`[scheduler] ✅ Started (interval: ${TICK_INTERVAL_MS / 1000}s, batch: ${BATCH_SIZE})`);
 }
 
-/** Stop the background scheduler */
 export function stopScheduler(): void {
   if (timer) {
     clearInterval(timer);
@@ -121,13 +108,11 @@ export function stopScheduler(): void {
   console.log('[scheduler] ⏹ Stopped');
 }
 
-/** Force a tick right now (for debugging / manual trigger) */
-export function forceTick(): void {
-  tick();
+export async function forceTick(): Promise<void> {
+  await tick();
 }
 
-/** Get full scheduler status */
-export function getSchedulerStatus(): SchedulerStatus {
+export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   return {
     running,
     intervalMs: TICK_INTERVAL_MS,

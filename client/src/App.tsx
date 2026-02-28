@@ -3,6 +3,7 @@ import TracksPage from './pages/TracksPage';
 import PlaylistsPage from './pages/PlaylistsPage';
 import PlaylistEditorPage from './pages/PlaylistEditorPage';
 import FavoritesPage from './pages/FavoritesPage';
+import HistoryPage from './pages/HistoryPage';
 import { AudioPlayerProvider, PlayerBar } from './components/AudioPlayer';
 
 function App() {
@@ -21,6 +22,9 @@ function App() {
             <NavLink to="/favorites" className={({ isActive }) => isActive ? 'active' : ''}>
               ❤️ Favorites
             </NavLink>
+            <NavLink to="/history" className={({ isActive }) => isActive ? 'active' : ''}>
+              📜 History
+            </NavLink>
           </nav>
         </aside>
         <main className="main-content">
@@ -29,6 +33,7 @@ function App() {
             <Route path="/playlists" element={<PlaylistsPage />} />
             <Route path="/playlists/:id" element={<PlaylistEditorPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
+            <Route path="/history" element={<HistoryPage />} />
           </Routes>
         </main>
         <PlayerBar />
