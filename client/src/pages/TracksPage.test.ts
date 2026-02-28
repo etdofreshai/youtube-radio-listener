@@ -28,7 +28,9 @@ const COLUMNS: ColumnDef[] = [
 
 const EDIT_COLUMNS: ColumnDef[] = [
   { key: 'title', label: 'Title', sortField: 'title' },
+  { key: 'swap_ta', label: '' },
   { key: 'artist', label: 'Artist', sortField: 'artist' },
+  { key: 'swap_aa', label: '' },
   { key: 'album', label: 'Album', sortField: 'album' },
   { key: 'start', label: 'Start' },
   { key: 'end', label: 'End' },
@@ -121,13 +123,13 @@ describe('TracksPage column layout (Regular mode)', () => {
 });
 
 describe('TracksPage column layout (Edit mode)', () => {
-  it('has exactly 7 columns', () => {
-    assert.strictEqual(EDIT_COLUMNS.length, 7);
+  it('has exactly 9 columns (including 2 swap separator columns)', () => {
+    assert.strictEqual(EDIT_COLUMNS.length, 9);
   });
 
-  it('column keys are title, artist, album, start, end, duration, actions', () => {
+  it('column keys include swap_ta between title/artist and swap_aa between artist/album', () => {
     const keys = EDIT_COLUMNS.map(c => c.key);
-    assert.deepStrictEqual(keys, ['title', 'artist', 'album', 'start', 'end', 'duration', 'actions']);
+    assert.deepStrictEqual(keys, ['title', 'swap_ta', 'artist', 'swap_aa', 'album', 'start', 'end', 'duration', 'actions']);
   });
 
   it('title, artist, album, and duration are sortable', () => {
@@ -135,7 +137,9 @@ describe('TracksPage column layout (Edit mode)', () => {
     assert.deepStrictEqual(sortable, ['title', 'artist', 'album', 'duration']);
   });
 
-  it('start, end, actions columns have no sort field', () => {
+  it('swap, start, end, actions columns have no sort field', () => {
+    assert.strictEqual(EDIT_COLUMNS.find(c => c.key === 'swap_ta')?.sortField, undefined);
+    assert.strictEqual(EDIT_COLUMNS.find(c => c.key === 'swap_aa')?.sortField, undefined);
     assert.strictEqual(EDIT_COLUMNS.find(c => c.key === 'start')?.sortField, undefined);
     assert.strictEqual(EDIT_COLUMNS.find(c => c.key === 'end')?.sortField, undefined);
     assert.strictEqual(EDIT_COLUMNS.find(c => c.key === 'actions')?.sortField, undefined);

@@ -1619,7 +1619,7 @@ a:hover {
 }
 
 /* ============================================================
-   Now Playing — Video Player & Theater Mode
+   Now Playing — Video Player, Lyrics & Theater Mode
    ============================================================ */
 
 /* Video container in artwork area */
@@ -1641,7 +1641,7 @@ a:hover {
   background: #000;
 }
 
-/* Video overlay controls (theater + fullscreen buttons) */
+/* Video overlay controls */
 .now-playing-video-controls {
   position: absolute;
   bottom: 8px;
@@ -1672,19 +1672,36 @@ a:hover {
   background: rgba(124, 58, 237, 0.8) !important;
 }
 
-/* Video download status */
-.now-playing-video-status {
+/* Video download overlay button on artwork */
+.now-playing-video-overlay-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.2rem;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 32px;
+  justify-content: center;
+  transition: background 0.15s, transform 0.15s;
+  opacity: 0;
 }
 
-.now-playing-video-status-text {
-  font-size: 0.82rem;
-  color: var(--text-muted);
+.now-playing-art:hover .now-playing-video-overlay-btn {
+  opacity: 1;
 }
 
+.now-playing-video-overlay-btn:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.8);
+  transform: scale(1.1);
+}
+
+/* Video download button (standalone) */
 .now-playing-video-dl-btn {
   font-size: 0.8rem;
   padding: 4px 12px;
@@ -1706,12 +1723,144 @@ a:hover {
   cursor: not-allowed;
 }
 
+/* Status line under media panel */
+.now-playing-status-line {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+/* ── Mode toggle bar ── */
+.now-playing-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  gap: 8px;
+}
+
+.now-playing-mode-toggle {
+  display: flex;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.mode-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.mode-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.mode-toggle-btn.mode-toggle-active {
+  background: var(--accent-dim);
+  color: white;
+}
+
+.mode-maximize-btn {
+  font-size: 1.1rem !important;
+  padding: 4px 8px !important;
+  color: var(--text-muted) !important;
+  border-radius: var(--radius) !important;
+  transition: all 0.15s !important;
+}
+
+.mode-maximize-btn:hover {
+  color: var(--text-primary) !important;
+  background: var(--bg-hover) !important;
+}
+
+/* ── Lyrics panel ── */
+.now-playing-lyrics-panel {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow-y: auto;
+  padding: 24px 20px;
+  scroll-behavior: smooth;
+}
+
+.now-playing-lyrics-text {
+  text-align: center;
+}
+
+.lyrics-line {
+  font-size: 1rem;
+  line-height: 1.8;
+  color: var(--text-muted);
+  transition: color 0.3s, font-size 0.3s, transform 0.3s;
+  padding: 2px 0;
+}
+
+.lyrics-line-active {
+  color: var(--text-primary);
+  font-size: 1.15rem;
+  font-weight: 600;
+  transform: scale(1.02);
+}
+
+.lyrics-source-tag {
+  margin-top: 24px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.now-playing-lyrics-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.lyrics-spinner {
+  font-size: 2rem;
+  animation: spin-slow 2s linear infinite;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.now-playing-lyrics-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.lyrics-empty-icon {
+  font-size: 3rem;
+  opacity: 0.4;
+}
+
+.now-playing-lyrics-empty p {
+  font-size: 1rem;
+}
+
 /* ── Theater mode ── */
-/* Theater mode expands the video to fill more of the viewport
-   while keeping the bottom player bar visible.
-   True browser fullscreen (F11 / Fullscreen API) hides all app chrome
-   including the player bar — that's expected browser behavior.
-   Theater mode is the "best of both worlds": big video + controls. */
+/* Expands the media panel to fill viewport width while keeping
+   the bottom player bar visible. Works for all three media modes. */
 
 .now-playing-theater .now-playing-layout {
   grid-template-columns: 1fr;
@@ -1730,9 +1879,20 @@ a:hover {
 }
 
 .now-playing-theater .now-playing-video {
-  max-height: calc(100vh - 260px); /* leave room for controls + player bar */
+  max-height: calc(100vh - 260px);
   width: 100%;
   aspect-ratio: auto;
+}
+
+.now-playing-theater .now-playing-lyrics-panel {
+  aspect-ratio: auto;
+  max-height: calc(100vh - 260px);
+  min-height: 300px;
+}
+
+.now-playing-theater .now-playing-art img {
+  aspect-ratio: auto;
+  max-height: calc(100vh - 260px);
 }
 
 .now-playing-theater .now-playing-back {
@@ -2734,7 +2894,7 @@ a:hover {
 
 .track-row-edit {
   display: grid;
-  grid-template-columns: 1.5fr 1fr 1fr 80px 80px 64px 72px;
+  grid-template-columns: 1.5fr 28px 1fr 28px 1fr 80px 80px 64px 72px;
   align-items: center;
   padding: 4px 12px;
   gap: 6px 8px;
@@ -2781,6 +2941,13 @@ a:hover {
   align-items: center;
   gap: 4px;
   min-width: 0;
+}
+
+/* Swap button column between corresponding field columns */
+.edit-cell-swap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .edit-cell-time {
@@ -2910,18 +3077,24 @@ a:hover {
 /* Responsive edit mode */
 @media (max-width: 900px) {
   .track-row-edit {
+    /* Mobile: show Title (1), Artist (3), Actions (9) — hide swap cols and narrow fields */
     grid-template-columns: 1fr 1fr 64px;
     gap: 4px 6px;
   }
 
-  .track-row-edit .edit-cell:nth-child(3),
-  .track-row-edit .edit-cell:nth-child(4),
-  .track-row-edit .edit-cell:nth-child(5),
-  .track-row-edit .edit-cell:nth-child(6),
-  .track-header-edit span:nth-child(3),
+  /* Hide: swap_ta (2), swap_aa (4), album (5), start (6), end (7), duration (8) */
+  .track-row-edit > *:nth-child(2),
+  .track-row-edit > *:nth-child(4),
+  .track-row-edit > *:nth-child(5),
+  .track-row-edit > *:nth-child(6),
+  .track-row-edit > *:nth-child(7),
+  .track-row-edit > *:nth-child(8),
+  .track-header-edit span:nth-child(2),
   .track-header-edit span:nth-child(4),
   .track-header-edit span:nth-child(5),
-  .track-header-edit span:nth-child(6) {
+  .track-header-edit span:nth-child(6),
+  .track-header-edit span:nth-child(7),
+  .track-header-edit span:nth-child(8) {
     display: none;
   }
 }

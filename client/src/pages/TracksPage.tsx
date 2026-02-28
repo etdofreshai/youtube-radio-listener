@@ -46,7 +46,9 @@ const COLUMNS: ColumnDef[] = [
 
 const EDIT_COLUMNS: ColumnDef[] = [
   { key: 'title', label: 'Title', sortField: 'title' },
+  { key: 'swap_ta', label: '' },
   { key: 'artist', label: 'Artist', sortField: 'artist' },
+  { key: 'swap_aa', label: '' },
   { key: 'album', label: 'Album', sortField: 'album' },
   { key: 'start', label: 'Start' },
   { key: 'end', label: 'End' },
@@ -439,17 +441,17 @@ export default function TracksPage() {
               <span className="action-menu-icon">🔍</span>
               {isEnriching ? 'Enriching…' : 'Enrich'}
             </button>
-            {track.audioStatus === 'ready' && (
+            {!track.isLiveStream && track.audioStatus === 'ready' && (
               <button className="action-menu-item" onClick={() => handleRefresh(track.id)}>
                 <span className="action-menu-icon">🔄</span> Re-download
               </button>
             )}
-            {(track.audioStatus === 'error' || track.audioStatus === 'pending') && (
+            {!track.isLiveStream && (track.audioStatus === 'error' || track.audioStatus === 'pending') && (
               <button className="action-menu-item" onClick={() => handleDownload(track.id)}>
                 <span className="action-menu-icon">⬇️</span> Download
               </button>
             )}
-            {track.videoStatus !== 'ready' && track.videoStatus !== 'downloading' && (
+            {!track.isLiveStream && track.videoStatus !== 'ready' && track.videoStatus !== 'downloading' && (
               <button className="action-menu-item" onClick={() => handleDownloadVideo(track.id)}>
                 <span className="action-menu-icon">🎬</span> Download Video
               </button>
@@ -485,12 +487,21 @@ export default function TracksPage() {
               <dd>{formatDateTime(track.createdAt)}</dd>
               <dt>Last Updated</dt>
               <dd>{formatDateTime(track.updatedAt)}</dd>
+              {track.isLiveStream && (
+                <><dt>Mode</dt><dd><span className="badge badge-live">📡 Live Stream</span></dd></>
+              )}
               <dt>Audio Status</dt>
               <dd>
-                {track.audioStatus === 'ready' && <span className="badge badge-ready">● Ready</span>}
-                {track.audioStatus === 'downloading' && <span className="badge badge-downloading">⏳ Downloading…</span>}
-                {track.audioStatus === 'pending' && <span className="badge badge-pending">○ Pending</span>}
-                {track.audioStatus === 'error' && <span className="badge badge-error" title={track.audioError || 'Download failed'}>✕ Error</span>}
+                {track.isLiveStream ? (
+                  <span className="badge badge-ready">📡 Streaming</span>
+                ) : (
+                  <>
+                    {track.audioStatus === 'ready' && <span className="badge badge-ready">● Ready</span>}
+                    {track.audioStatus === 'downloading' && <span className="badge badge-downloading">⏳ Downloading…</span>}
+                    {track.audioStatus === 'pending' && <span className="badge badge-pending">○ Pending</span>}
+                    {track.audioStatus === 'error' && <span className="badge badge-error" title={track.audioError || 'Download failed'}>✕ Error</span>}
+                  </>
+                )}
               </dd>
               <dt>Video Status</dt>
               <dd>
@@ -672,11 +683,11 @@ export default function TracksPage() {
               <div className={`track-row ${isCurrent ? 'track-active' : ''} ${isExpanded ? 'track-expanded' : ''}`}>
                 {/* Play */}
                 <div className="col-play">
-                  {canPlay ? (
+                  {canPlay || t.isLiveStream ? (
                     <button
                       className={`btn-play ${isCurrent && isPlaying ? 'playing' : ''}`}
                       onClick={() => handlePlay(t)}
-                      title={isCurrent && isPlaying ? 'Pause' : 'Play'}
+                      title={isCurrent && isPlaying ? 'Pause' : (t.isLiveStream ? 'Stream Live' : 'Play')}
                     >
                       {isCurrent && isPlaying ? '⏸' : '▶'}
                     </button>
@@ -698,6 +709,7 @@ export default function TracksPage() {
                       {t.title}
                     </span>
                     <span className="track-badges">
+                      {t.isLiveStream && <span className="badge-live" title="Live Stream">LIVE</span>}
                       <StatusDot track={t} />
                       {t.verified && <span className="verified-tick" title="Verified">✓</span>}
                       <EnrichmentBadge status={t.enrichmentStatus} confidence={t.metadataConfidence} />
@@ -736,7 +748,9 @@ export default function TracksPage() {
                 </div>
 
                 {/* Duration */}
-                <div className="track-duration col-duration">{formatDuration(t.duration)}</div>
+                <div className="track-duration col-duration">
+                  {t.isLiveStream ? <span className="badge-live-sm" title="Live Stream">📡</span> : formatDuration(t.duration)}
+                </div>
 
                 {/* Actions — compact ⋯ menu */}
                 <div className="col-actions">
@@ -786,7 +800,19 @@ export default function TracksPage() {
               />
             </div>
 
-            {/* Artist with pencil + swap */}
+            {/* Swap title ↔ artist (between Title and Artist columns) */}
+            <div className="edit-cell-swap">
+              <button
+                className="btn-swap"
+                onClick={() => handleSwapTitleArtist(t.id)}
+                title="Swap title ↔ artist"
+                aria-label="Swap title and artist"
+              >
+                ↔
+              </button>
+            </div>
+
+            {/* Artist with pencil */}
             <div className="edit-cell">
               <span className="edit-pencil" title="Edit artist">✏️</span>
               <input
@@ -797,17 +823,21 @@ export default function TracksPage() {
                 title="Artist"
                 aria-label="Edit artist"
               />
+            </div>
+
+            {/* Swap artist ↔ album (between Artist and Album columns) */}
+            <div className="edit-cell-swap">
               <button
                 className="btn-swap"
-                onClick={() => handleSwapTitleArtist(t.id)}
-                title="Swap title ↔ artist"
-                aria-label="Swap title and artist"
+                onClick={() => handleSwapArtistAlbum(t.id)}
+                title="Swap artist ↔ album"
+                aria-label="Swap artist and album"
               >
-                ↔T
+                ↔
               </button>
             </div>
 
-            {/* Album with pencil + swap */}
+            {/* Album with pencil */}
             <div className="edit-cell">
               <span className="edit-pencil" title="Edit album">✏️</span>
               <input
@@ -818,14 +848,6 @@ export default function TracksPage() {
                 title="Album"
                 aria-label="Edit album"
               />
-              <button
-                className="btn-swap"
-                onClick={() => handleSwapArtistAlbum(t.id)}
-                title="Swap artist ↔ album"
-                aria-label="Swap artist and album"
-              >
-                ↔A
-              </button>
             </div>
 
             {/* Start Time */}
