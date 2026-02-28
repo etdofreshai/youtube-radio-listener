@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as store from '../store';
-import { downloadTrackAudio, refreshTrackAudio, downloadTrackVideo, deleteTrackVideo } from '../downloader';
+import { downloadTrackAudio, refreshTrackAudio, downloadTrackVideo, deleteTrackAudio, deleteTrackVideo } from '../downloader';
 import { enrichTrack, enrichTrackSync, enrichAllTracks, listProviders, budgetTracker } from '../services/enrichment';
 import { getSchedulerStatus, forceTick, startScheduler, stopScheduler } from '../services/scheduler';
 import { fetchYouTubeMetadata, parseArtistTitle, isValidYouTubeUrl, searchYouTube } from '../services/youtube-metadata';
@@ -159,6 +159,7 @@ router.post('/', async (req, res) => {
   // Determine title and artist — prefer user-provided, fall back to YouTube metadata
   let resolvedTitle = title?.trim() || '';
   let resolvedArtist = artist?.trim() || '';
+  let fetchedIsLive: boolean | undefined;
 
   if (!resolvedTitle || !resolvedArtist) {
     // Need to fetch metadata from YouTube
@@ -174,6 +175,8 @@ router.post('/', async (req, res) => {
       if (!resolvedTitle) resolvedTitle = parsed.title;
       if (!resolvedArtist) resolvedArtist = parsed.artist;
 
+      fetchedIsLive = ytInfo.isLive;
+
       // Auto-detect live stream if not explicitly set
       if (isLiveStream === undefined && ytInfo.isLive) {
         isLiveStream = true;
@@ -186,6 +189,16 @@ router.post('/', async (req, res) => {
         detail: msg,
       });
       return;
+    }
+  }
+
+  // If metadata fetch wasn't needed for title/artist, still attempt live detection.
+  if (isLiveStream === undefined && fetchedIsLive === undefined && isValidYouTubeUrl(youtubeUrl)) {
+    try {
+      const ytInfo = await fetchYouTubeMetadata(youtubeUrl);
+      isLiveStream = ytInfo.isLive;
+    } catch {
+      // Best effort only — do not block track creation on detection failures.
     }
   }
 
@@ -244,39 +257,75 @@ router.post('/', async (req, res) => {
 
 // PUT /api/tracks/:id
 router.put('/:id', async (req, res) => {
+  const id = paramId(req.params.id);
   const input = req.body as UpdateTrackInput;
   if (input.volume != null && (input.volume < 0 || input.volume > 200)) {
     res.status(400).json({ error: 'volume must be between 0 and 200' });
     return;
   }
+
+  const existing = await store.getTrack(id);
+  if (!existing) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  // If URL changed and mode wasn't explicitly set, auto-detect live mode from YouTube metadata.
+  if (input.youtubeUrl && input.isLiveStream === undefined && isValidYouTubeUrl(input.youtubeUrl)) {
+    try {
+      const ytInfo = await fetchYouTubeMetadata(input.youtubeUrl);
+      input.isLiveStream = ytInfo.isLive;
+    } catch {
+      // Best effort only — don't block updates on detection failure.
+    }
+  }
+
   // Pass the full input including artistIds and albumId
-  const track = await store.updateTrack(paramId(req.params.id), input);
-  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+  const updatedTrack = await store.updateTrack(id, input);
+  if (!updatedTrack) { res.status(404).json({ error: 'Track not found' }); return; }
 
   // Record event
   const userId = getActorId(req);
   store.recordEvent('track.updated', {
     userId,
     entityType: 'track',
-    entityId: track.id,
+    entityId: updatedTrack.id,
     metadata: { changes: Object.keys(input) },
   }).catch(() => {});
 
-  if (input.youtubeUrl) {
-    refreshTrackAudio(track.id).catch(err => {
-      console.error(`[tracks] Re-download failed for ${track.id}:`, err);
-    });
-    // URL changed → re-enrich from scratch
-    await store.updateTrackMetadata(track.id, {
+  const modeChanged = input.isLiveStream !== undefined && input.isLiveStream !== existing.isLiveStream;
+
+  if (input.youtubeUrl || modeChanged) {
+    if (updatedTrack.isLiveStream) {
+      // Stream-only mode: clear download artifacts and mark ready
+      deleteTrackAudio(updatedTrack.id);
+      await store.updateTrackAudio(updatedTrack.id, {
+        audioStatus: 'ready',
+        audioFilename: null,
+        audioError: null,
+        duration: null,
+        lastDownloadAt: null,
+      });
+    } else {
+      // Downloaded mode: refresh local file when URL or mode changes
+      refreshTrackAudio(updatedTrack.id).catch(err => {
+        console.error(`[tracks] Re-download failed for ${updatedTrack.id}:`, err);
+      });
+    }
+
+    // URL or mode changed → re-enrich from scratch
+    await store.updateTrackMetadata(updatedTrack.id, {
       enrichmentStatus: 'none',
       stageACompletedAt: null,
       stageBCompletedAt: null,
       enrichmentAttempts: 0,
     });
-    enrichTrack(track.id);
+    enrichTrack(updatedTrack.id);
+
+    // Return latest track snapshot after audio state adjustment
+    const latest = await store.getTrack(updatedTrack.id);
+    res.json(latest || updatedTrack);
+    return;
   }
 
-  res.json(track);
+  res.json(updatedTrack);
 });
 
 // DELETE /api/tracks/:id
@@ -286,7 +335,8 @@ router.delete('/:id', async (req, res) => {
   const deleted = await store.deleteTrack(id);
   if (!deleted) { res.status(404).json({ error: 'Track not found' }); return; }
 
-  // Clean up video files
+  // Clean up local media files
+  deleteTrackAudio(id);
   deleteTrackVideo(id);
 
   // Record event
