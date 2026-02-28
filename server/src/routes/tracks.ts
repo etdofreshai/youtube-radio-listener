@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as store from '../store/memory';
-import { downloadTrackAudio, refreshTrackAudio } from '../downloader';
+import { downloadTrackAudio, refreshTrackAudio, deleteTrackAudio } from '../downloader';
 import { enrichTrack, enrichAllTracks, listProviders } from '../services/enrichment';
 import type { CreateTrackInput, UpdateTrackInput, SortableTrackField, SortDirection } from '../types';
 
@@ -127,7 +127,14 @@ router.put('/:id', (req, res) => {
 
 // ---------- DELETE /api/tracks/:id ----------
 router.delete('/:id', (req, res) => {
-  const deleted = store.deleteTrack(paramId(req.params.id));
+  const id = paramId(req.params.id);
+  const track = store.getTrack(id);
+  if (!track) { res.status(404).json({ error: 'Track not found' }); return; }
+
+  // Clean up audio file before deleting track data
+  deleteTrackAudio(id);
+
+  const deleted = store.deleteTrack(id);
   if (!deleted) { res.status(404).json({ error: 'Track not found' }); return; }
   res.status(204).send();
 });

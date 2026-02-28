@@ -176,6 +176,21 @@ export async function refreshTrackAudio(trackId: string): Promise<void> {
 }
 
 /**
+ * Delete audio files for a track (called on track deletion).
+ */
+export function deleteTrackAudio(trackId: string): void {
+  try {
+    const candidates = fs.readdirSync(AUDIO_DIR).filter(f => f.startsWith(trackId + '.'));
+    for (const f of candidates) {
+      fs.unlinkSync(path.join(AUDIO_DIR, f));
+      console.log(`[downloader] 🗑 Deleted audio file: ${f}`);
+    }
+  } catch {
+    // ignore — file may not exist
+  }
+}
+
+/**
  * Get the full file path for a track's audio, with validation.
  */
 export function getAudioFilePath(trackId: string): string | null {

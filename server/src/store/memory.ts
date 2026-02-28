@@ -3,7 +3,7 @@ import type {
   Track, Playlist, Favorite,
   CreateTrackInput, UpdateTrackInput,
   CreatePlaylistInput, UpdatePlaylistInput,
-  AudioStatus,
+  AudioStatus, EnrichmentStatus, FieldConfidence,
   PaginationParams, PaginatedResponse,
   SortableTrackField, SortDirection,
 } from '../types';
@@ -20,7 +20,10 @@ function defaultMetadata(): Pick<Track,
   'ytChannel' | 'ytChannelId' | 'ytUploadDate' | 'ytDescription' |
   'ytThumbnailUrl' | 'ytViewCount' | 'ytLikeCount' |
   'album' | 'releaseYear' | 'genre' | 'label' | 'isrc' | 'bpm' |
-  'metadataSource' | 'metadataConfidence' | 'lastEnrichedAt' |
+  'artworkUrl' | 'artworkSource' | 'alternateLinks' |
+  'metadataSource' | 'metadataConfidence' | 'fieldConfidences' | 'lastEnrichedAt' |
+  'enrichmentStatus' | 'enrichmentAttempts' | 'enrichmentError' |
+  'nextEnrichAt' | 'stageACompletedAt' | 'stageBCompletedAt' |
   'verified' | 'verifiedBy' | 'verifiedAt'
 > {
   return {
@@ -37,9 +40,19 @@ function defaultMetadata(): Pick<Track,
     label: null,
     isrc: null,
     bpm: null,
+    artworkUrl: null,
+    artworkSource: null,
+    alternateLinks: null,
     metadataSource: null,
     metadataConfidence: null,
+    fieldConfidences: [],
     lastEnrichedAt: null,
+    enrichmentStatus: 'none',
+    enrichmentAttempts: 0,
+    enrichmentError: null,
+    nextEnrichAt: null,
+    stageACompletedAt: null,
+    stageBCompletedAt: null,
     verified: false,
     verifiedBy: null,
     verifiedAt: null,
@@ -154,6 +167,57 @@ export function getTracksPaginated(params: PaginationParams): PaginatedResponse<
   };
 }
 
+/**
+ * Find tracks that need enrichment, prioritized:
+ * 1. Never enriched (enrichmentStatus === 'none')
+ * 2. Stage A done but low confidence → candidates for Stage B
+ * 3. Error with backoff elapsed
+ * Returns at most `limit` tracks.
+ */
+export function getTracksNeedingEnrichment(limit: number, now: number): Track[] {
+  const all = Array.from(tracks.values());
+
+  // Score each track for enrichment priority (lower = more urgent)
+  const scored: Array<{ track: Track; score: number }> = [];
+
+  for (const t of all) {
+    // Skip tracks currently being processed
+    if (t.enrichmentStatus === 'stage_a' || t.enrichmentStatus === 'stage_b' || t.enrichmentStatus === 'queued') {
+      continue;
+    }
+
+    // Skip tracks with nextEnrichAt in the future (backoff cooldown)
+    if (t.nextEnrichAt && new Date(t.nextEnrichAt).getTime() > now) {
+      continue;
+    }
+
+    let score: number;
+
+    if (t.enrichmentStatus === 'none') {
+      // Never enriched — highest priority. Older tracks first.
+      score = 0 + (now - new Date(t.createdAt).getTime()) / 1e12;
+    } else if (t.enrichmentStatus === 'stage_a_done' && t.metadataConfidence !== 'high') {
+      // Stage A done but incomplete — needs Stage B
+      const confPriority = t.metadataConfidence === 'low' ? 100 : 200;
+      score = confPriority + (now - new Date(t.createdAt).getTime()) / 1e12;
+    } else if (t.enrichmentStatus === 'error') {
+      // Error — retry with lower priority
+      score = 300 + t.enrichmentAttempts * 50;
+    } else if (t.enrichmentStatus === 'complete' && t.metadataConfidence !== 'high') {
+      // Complete but still low confidence — re-attempt with lowest priority
+      score = 500;
+    } else {
+      // Already complete with high confidence — skip
+      continue;
+    }
+
+    scored.push({ track: t, score });
+  }
+
+  scored.sort((a, b) => a.score - b.score);
+  return scored.slice(0, limit).map(s => s.track);
+}
+
 export function getTrack(id: string): Track | undefined {
   return tracks.get(id);
 }
@@ -177,7 +241,7 @@ export function createTrack(input: CreateTrackInput): Track {
     audioFilename: null,
     duration: null,
     lastDownloadAt: null,
-    // Metadata + verification defaults
+    // Metadata + verification + enrichment defaults
     ...defaultMetadata(),
   };
   tracks.set(track.id, track);
@@ -188,7 +252,6 @@ export function updateTrack(id: string, input: UpdateTrackInput): Track | null {
   const existing = tracks.get(id);
   if (!existing) return null;
 
-  // Only apply defined fields from input
   const updates: Partial<Track> = {};
   if (input.youtubeUrl !== undefined) updates.youtubeUrl = input.youtubeUrl;
   if (input.title !== undefined) updates.title = input.title;
@@ -243,7 +306,10 @@ export function updateTrackMetadata(
     'ytChannel' | 'ytChannelId' | 'ytUploadDate' | 'ytDescription' |
     'ytThumbnailUrl' | 'ytViewCount' | 'ytLikeCount' |
     'album' | 'releaseYear' | 'genre' | 'label' | 'isrc' | 'bpm' |
-    'metadataSource' | 'metadataConfidence' | 'lastEnrichedAt'
+    'artworkUrl' | 'artworkSource' | 'alternateLinks' |
+    'metadataSource' | 'metadataConfidence' | 'fieldConfidences' | 'lastEnrichedAt' |
+    'enrichmentStatus' | 'enrichmentAttempts' | 'enrichmentError' |
+    'nextEnrichAt' | 'stageACompletedAt' | 'stageBCompletedAt'
   >>
 ): Track | null {
   const existing = tracks.get(id);

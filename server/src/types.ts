@@ -1,5 +1,25 @@
 export type AudioStatus = 'pending' | 'downloading' | 'ready' | 'error';
 
+// ---------- Enrichment Pipeline ----------
+
+/** Overall enrichment lifecycle status */
+export type EnrichmentStatus =
+  | 'none'           // never attempted
+  | 'queued'         // waiting in queue
+  | 'stage_a'        // deterministic pass running
+  | 'stage_a_done'   // deterministic pass complete
+  | 'stage_b'        // AI deep pass running
+  | 'complete'       // all passes done
+  | 'error';         // last attempt failed
+
+/** Per-field confidence for granular provenance */
+export interface FieldConfidence {
+  field: string;
+  confidence: 'high' | 'medium' | 'low' | 'manual';
+  source: string;         // e.g. 'youtube', 'ai-research', 'manual'
+  updatedAt: string;      // ISO timestamp
+}
+
 // ---------- Metadata / Enrichment ----------
 
 export interface TrackMetadata {
@@ -18,12 +38,27 @@ export interface TrackMetadata {
   label: string | null;
   isrc: string | null;
   bpm: number | null;
+  // Artwork
+  artworkUrl: string | null;       // album art / cover image URL
+  artworkSource: string | null;    // 'youtube-thumbnail' | 'musicbrainz' | 'discogs' | etc.
+  // Alternate links
+  alternateLinks: Record<string, string> | null;  // { spotify: url, apple: url, altYoutube: url, ... }
 }
 
 export interface TrackProvenance {
-  metadataSource: string | null;      // 'youtube' | 'musicbrainz' | 'manual' | etc.
-  metadataConfidence: string | null;  // 'high' | 'medium' | 'low'
-  lastEnrichedAt: string | null;      // ISO timestamp
+  metadataSource: string | null;         // 'youtube' | 'youtube+ai' | 'manual' | etc.
+  metadataConfidence: string | null;     // overall: 'high' | 'medium' | 'low'
+  fieldConfidences: FieldConfidence[];   // per-field granular provenance
+  lastEnrichedAt: string | null;         // ISO timestamp
+}
+
+export interface TrackEnrichmentState {
+  enrichmentStatus: EnrichmentStatus;
+  enrichmentAttempts: number;            // total attempts (A + B)
+  enrichmentError: string | null;        // last error message
+  nextEnrichAt: string | null;           // ISO timestamp — backoff-scheduled next attempt
+  stageACompletedAt: string | null;      // when Stage A last finished
+  stageBCompletedAt: string | null;      // when Stage B last finished
 }
 
 // ---------- Verification ----------
@@ -36,7 +71,7 @@ export interface TrackVerification {
 
 // ---------- Track ----------
 
-export interface Track extends TrackMetadata, TrackProvenance, TrackVerification {
+export interface Track extends TrackMetadata, TrackProvenance, TrackEnrichmentState, TrackVerification {
   id: string;
   youtubeUrl: string;
   title: string;
@@ -135,4 +170,27 @@ export interface PaginatedResponse<T> {
   totalPages: number;
   sortBy: string;
   sortDir: string;
+}
+
+// ---------- Scheduler / Queue ----------
+
+export interface SchedulerStatus {
+  running: boolean;
+  intervalMs: number;
+  queueLength: number;
+  activeJobs: number;
+  maxConcurrency: number;
+  budget: {
+    aiEnrichesThisHour: number;
+    aiEnrichesToday: number;
+    maxAiPerHour: number;
+    maxAiPerDay: number;
+  };
+  lastTickAt: string | null;
+  nextTickAt: string | null;
+  stats: {
+    totalStageACompleted: number;
+    totalStageBCompleted: number;
+    totalErrors: number;
+  };
 }

@@ -45,6 +45,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [volume, setVolumeState] = useState(100);
   const [playlist, setPlaylist] = useState<Track[]>([]);
 
+  // Ref to hold auto-advance callback (updated when playlist/currentTrack change)
+  const onEndedRef = useRef<() => void>(() => {});
+
   // Create audio element + Web Audio API gain node once
   useEffect(() => {
     const audio = new Audio();
@@ -66,7 +69,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
     audio.addEventListener('timeupdate', () => setCurrentTime(audio.currentTime));
     audio.addEventListener('durationchange', () => setDuration(audio.duration));
-    audio.addEventListener('ended', () => setIsPlaying(false));
+    audio.addEventListener('ended', () => onEndedRef.current());
     audio.addEventListener('play', () => setIsPlaying(true));
     audio.addEventListener('pause', () => setIsPlaying(false));
 
@@ -136,12 +139,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     }
   }, []);
 
-  // Handle endTimeSec
+  // Handle endTimeSec — stop at specified end time and auto-advance
   useEffect(() => {
     if (!currentTrack?.endTimeSec || !isPlaying) return;
     if (currentTime >= currentTrack.endTimeSec) {
       audioRef.current?.pause();
-      setIsPlaying(false);
+      // Trigger auto-advance as if track ended naturally
+      onEndedRef.current();
     }
   }, [currentTime, currentTrack, isPlaying]);
 
@@ -157,6 +161,20 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const readyTracks = playlist.filter(t => t.audioStatus === 'ready');
     const idx = readyTracks.findIndex(t => t.id === currentTrack.id);
     if (idx > 0) play(readyTracks[idx - 1]);
+  }, [currentTrack, playlist, play]);
+
+  // Auto-advance: when track ends, play next
+  useEffect(() => {
+    onEndedRef.current = () => {
+      // Check if endTimeSec triggered the stop (handled elsewhere) — don't double-advance
+      const readyTracks = playlist.filter(t => t.audioStatus === 'ready');
+      const idx = currentTrack ? readyTracks.findIndex(t => t.id === currentTrack.id) : -1;
+      if (idx >= 0 && idx < readyTracks.length - 1) {
+        play(readyTracks[idx + 1]);
+      } else {
+        setIsPlaying(false);
+      }
+    };
   }, [currentTrack, playlist, play]);
 
   return (
