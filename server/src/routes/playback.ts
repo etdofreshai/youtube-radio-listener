@@ -1,13 +1,17 @@
 /**
  * Playback State API — cross-device sync for user playback position, queue, and history.
  *
- * GET  /api/playback/state — fetch current user's playback state
- * POST /api/playback/state — update current user's playback state
+ * GET  /api/playback/state         — fetch current user's playback state
+ * POST /api/playback/state         — update current user's playback state
+ * GET  /api/playback/next          — get next recommended track (Last.fm-based)
+ * GET  /api/playback/next?prefetch — also trigger background download if not cached
  */
 
 import { Router, Request, Response } from 'express';
 import * as store from '../store';
 import type { UpdatePlaybackStateInput, PlayHistoryEntry } from '../types';
+import { getNextTrack } from '../services/auto-next';
+import { downloadTrackAudio } from '../downloader';
 
 const router = Router();
 
@@ -113,6 +117,42 @@ router.post('/state', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[playback] POST /state error:', err);
     res.status(500).json({ error: 'Failed to update playback state' });
+  }
+});
+
+// ============================================================
+// GET /api/playback/next?currentTrackId=<id>[&prefetch=true]
+// Returns the next recommended track based on Last.fm similarity.
+// When prefetch=true and the track isn't cached, kicks off a background download.
+// ============================================================
+router.get('/next', async (req: Request, res: Response) => {
+  try {
+    const currentTrackId = req.query.currentTrackId as string | undefined;
+    const prefetch = req.query.prefetch === 'true' || req.query.prefetch === '1';
+
+    if (!currentTrackId) {
+      return res.status(400).json({ error: 'currentTrackId query param is required' });
+    }
+
+    const result = await getNextTrack(currentTrackId);
+
+    if (!result) {
+      return res.status(404).json({ error: 'No recommendation available' });
+    }
+
+    // If prefetch requested and the track is in our library but not cached, download it
+    const autoPrefetch = process.env.AUTO_NEXT_PREFETCH !== 'false';
+    if ((prefetch || autoPrefetch) && result.needsDownload && result.track.id) {
+      // Fire-and-forget background download
+      downloadTrackAudio(result.track.id).catch((err: unknown) => {
+        console.error(`[playback] Background prefetch download failed for ${result.track.id}:`, err);
+      });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('[playback] GET /next error:', err);
+    res.status(500).json({ error: 'Failed to get next track recommendation' });
   }
 });
 
